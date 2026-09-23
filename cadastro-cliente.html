@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cadastrar Cliente | Sistema MGK</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+
+  <!-- ============================ SIDEBAR ============================ -->
+  <aside class="sidebar offcanvas-lg offcanvas-start" id="sidebar" tabindex="-1" aria-label="Menu principal">
+    <div class="sidebar-inner">
+      <div class="sidebar-header">
+        <a href="clientes.html" class="brand">
+          <span class="brand-mark">MGK</span>
+          <span class="brand-text">
+            <span class="brand-name">MGK</span>
+            <span class="brand-sub">Makyuner Professional</span>
+          </span>
+        </a>
+        <button type="button" class="btn-close btn-close-white d-lg-none" data-bs-dismiss="offcanvas" data-bs-target="#sidebar" aria-label="Fechar menu"></button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <p class="sidebar-section-label">Cadastros</p>
+        <ul class="list-unstyled m-0">
+          <li>
+            <button class="sidebar-link is-open" type="button" data-bs-toggle="collapse" data-bs-target="#menuClientes" aria-expanded="true" aria-controls="menuClientes">
+              <i class="bi bi-people-fill"></i> Clientes
+              <i class="bi bi-chevron-down chevron"></i>
+            </button>
+            <div class="collapse show" id="menuClientes">
+              <ul class="sidebar-submenu">
+                <li><a href="clientes.html" class="sidebar-sublink">Consultar Clientes</a></li>
+                <li><a href="cadastro-cliente.html" class="sidebar-sublink active" id="menuCadastrar" aria-current="page">Cadastrar Cliente</a></li>
+              </ul>
+            </div>
+          </li>
+        </ul>
+
+        <p class="sidebar-section-label">Comercial</p>
+        <ul class="list-unstyled m-0">
+          <li>
+            <button class="sidebar-link" type="button" data-bs-toggle="collapse" data-bs-target="#menuVendas" aria-expanded="false" aria-controls="menuVendas">
+              <i class="bi bi-cart-check-fill"></i> Vendas
+              <i class="bi bi-chevron-down chevron"></i>
+            </button>
+            <div class="collapse" id="menuVendas">
+              <ul class="sidebar-submenu">
+                <li><a href="venda.html" class="sidebar-sublink">Cadastrar Venda</a></li>
+              </ul>
+            </div>
+          </li>
+        </ul>
+
+        <p class="sidebar-section-label">Em breve</p>
+        <ul class="list-unstyled m-0">
+          <li><span class="sidebar-link disabled" aria-disabled="true"><i class="bi bi-person-badge"></i> Vendedores <span class="badge-soon">Em breve</span></span></li>
+          <li><span class="sidebar-link disabled" aria-disabled="true"><i class="bi bi-box-seam"></i> Estoque <span class="badge-soon">Em breve</span></span></li>
+          <li><span class="sidebar-link disabled" aria-disabled="true"><i class="bi bi-cash-coin"></i> Pagamentos <span class="badge-soon">Em breve</span></span></li>
+          <li><span class="sidebar-link disabled" aria-disabled="true"><i class="bi bi-bullseye"></i> Metas <span class="badge-soon">Em breve</span></span></li>
+        </ul>
+      </nav>
+
+      <div class="sidebar-footer">Sistema MGK · v0.1</div>
+    </div>
+  </aside>
+
+  <!-- ============================ CONTEÚDO ============================ -->
+  <div class="app-main">
+    <header class="topbar">
+      <button class="btn-menu d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebar" aria-controls="sidebar" aria-label="Abrir menu">
+        <i class="bi bi-list"></i>
+      </button>
+      <a href="clientes.html" class="brand d-lg-none">
+        <span class="brand-mark">MGK</span>
+      </a>
+      <nav aria-label="breadcrumb" class="d-none d-sm-block">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="clientes.html">Clientes</a></li>
+          <li class="breadcrumb-item active" aria-current="page" id="breadcrumbAtual">Cadastrar</li>
+        </ol>
+      </nav>
+      <div class="topbar-user">
+        <span class="d-none d-md-inline text-secondary">Usuário demonstração</span>
+        <span class="avatar">UD</span>
+      </div>
+    </header>
+
+    <main class="app-content">
+      <div class="page-header">
+        <div>
+          <a href="clientes.html" class="page-eyebrow text-decoration-none">Clientes</a>
+          <h1 class="page-title" id="tituloPagina">Cadastrar Cliente</h1>
+          <p class="page-subtitle" id="subtituloPagina">Preencha os dados abaixo para cadastrar um novo cliente.</p>
+        </div>
+      </div>
+
+      <form id="formCliente" novalidate autocomplete="off">
+        <input type="hidden" id="id" name="id">
+
+        <!-- 01 · Dados pessoais -->
+        <section class="card-mgk">
+          <div class="card-mgk-header">
+            <h2 class="section-title"><span class="section-number">01</span> Dados pessoais</h2>
+            <p class="section-hint">Campos com <span class="text-danger">*</span> são obrigatórios</p>
+          </div>
+          <div class="card-mgk-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-8">
+                <label for="nome" class="form-label">Nome completo / Razão social<span class="req">*</span></label>
+                <input type="text" class="form-control" id="nome" name="nome" maxlength="120" required
+                       placeholder="Ex.: Maria da Silva">
+                <div class="invalid-feedback">Informe o nome do cliente (mínimo 3 caracteres).</div>
+              </div>
+              <div class="col-12 col-md-4">
+                <label for="documento" class="form-label">CPF/CNPJ<span class="req">*</span></label>
+                <input type="text" class="form-control text-mono" id="documento" name="documento" inputmode="numeric"
+                       maxlength="18" required placeholder="000.000.000-00">
+                <div class="invalid-feedback" id="documentoFeedback">Informe um CPF ou CNPJ válido.</div>
+              </div>
+              <div class="col-12 col-sm-6 col-md-4">
+                <label for="telefone" class="form-label">Telefone</label>
+                <input type="tel" class="form-control text-mono" id="telefone" name="telefone" inputmode="numeric"
+                       maxlength="15" placeholder="(00) 0000-0000">
+                <div class="invalid-feedback">Telefone incompleto.</div>
+              </div>
+              <div class="col-12 col-sm-6 col-md-4">
+                <label for="celular" class="form-label">Celular</label>
+                <input type="tel" class="form-control text-mono" id="celular" name="celular" inputmode="numeric"
+                       maxlength="15" placeholder="(00) 00000-0000">
+                <div class="invalid-feedback">Celular incompleto.</div>
+              </div>
+              <div class="col-12 col-md-4">
+                <label for="email" class="form-label">E-mail</label>
+                <input type="email" class="form-control" id="email" name="email" maxlength="120"
+                       placeholder="cliente@email.com">
+                <div class="invalid-feedback">Informe um e-mail válido.</div>
+              </div>
+
+              <!-- Exibido somente na edição -->
+              <div class="col-12" id="grupoStatus" hidden>
+                <div class="form-check form-switch m-0 pt-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="status" name="status" checked>
+                  <label class="form-check-label fw-semibold" for="status">Cliente ativo</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 02 · Endereço -->
+        <section class="card-mgk">
+          <div class="card-mgk-header">
+            <h2 class="section-title"><span class="section-number">02</span> Endereço</h2>
+          </div>
+          <div class="card-mgk-body">
+            <div class="row g-3">
+              <div class="col-12 col-sm-5 col-md-3">
+                <label for="cep" class="form-label">CEP<span class="req">*</span></label>
+                <input type="text" class="form-control text-mono" id="cep" name="cep" inputmode="numeric"
+                       maxlength="9" required placeholder="00000-000">
+                <div class="invalid-feedback">Informe um CEP válido.</div>
+              </div>
+              <div class="col-12 col-sm-7 col-md-7">
+                <label for="rua" class="form-label">Rua<span class="req">*</span></label>
+                <input type="text" class="form-control" id="rua" name="rua" maxlength="120" required
+                       placeholder="Rua, avenida, travessa...">
+                <div class="invalid-feedback">Informe a rua.</div>
+              </div>
+              <div class="col-5 col-md-2">
+                <label for="numero" class="form-label">Número<span class="req">*</span></label>
+                <input type="text" class="form-control" id="numero" name="numero" maxlength="10" required placeholder="Nº">
+                <div class="invalid-feedback">Obrigatório.</div>
+              </div>
+              <div class="col-7 col-md-4">
+                <label for="complemento" class="form-label">Complemento</label>
+                <input type="text" class="form-control" id="complemento" name="complemento" maxlength="60"
+                       placeholder="Apto, sala, bloco...">
+              </div>
+              <div class="col-12 col-md-8">
+                <label for="bairro" class="form-label">Bairro<span class="req">*</span></label>
+                <input type="text" class="form-control" id="bairro" name="bairro" maxlength="80" required>
+                <div class="invalid-feedback">Informe o bairro.</div>
+              </div>
+              <div class="col-12 col-sm-8 col-md-8">
+                <label for="cidade" class="form-label">Cidade<span class="req">*</span></label>
+                <input type="text" class="form-control" id="cidade" name="cidade" maxlength="80" required>
+                <div class="invalid-feedback">Informe a cidade.</div>
+              </div>
+              <div class="col-12 col-sm-4 col-md-4">
+                <label for="estado" class="form-label">Estado<span class="req">*</span></label>
+                <select class="form-select" id="estado" name="estado" required>
+                  <option value="">Selecione</option>
+                </select>
+                <div class="invalid-feedback">Selecione o estado.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Ações -->
+        <div class="form-actions">
+          <span class="form-actions-hint"><i class="bi bi-shield-check"></i> Os dados são salvos apenas neste navegador (demonstração).</span>
+          <a href="clientes.html" class="btn btn-outline-mgk btn-lg">Cancelar</a>
+          <button type="submit" class="btn btn-mgk btn-lg" id="btnSalvar">
+            <i class="bi bi-check-lg"></i> <span id="btnSalvarTexto">Salvar Cliente</span>
+          </button>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/mock-data.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/cadastro-cliente.js"></script>
+</body>
+</html>
