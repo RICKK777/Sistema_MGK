@@ -10,7 +10,8 @@
   "use strict";
 
   const STORAGE_KEY = "mgk.clientes.v1";
-  const PRODUTOS_KEY = "mgk.produtos.v1";
+  // Nome da chave no localStorage (não é credencial).
+  const PRODUTOS_KEY = "mgk.produtos.v1"; // gitleaks:allow
   const VENDAS_KEY = "mgk.vendas.v1";
   const SEED_KEY = "mgk.seed";
   const SEED_VERSION = 2;
@@ -203,7 +204,8 @@
     return lista;
   };
 
-  const newId = () => `c-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const randomSuffix = () => crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(4, "0").slice(-4);
+  const newId = () => `c-${Date.now().toString(36)}${randomSuffix()}`;
 
   const clientes = {
     listar() {
@@ -262,7 +264,7 @@
         const raw = localStorage.getItem(key);
         if (raw) return JSON.parse(raw);
       } catch (err) {
-        console.warn(`[MGK] Não foi possível ler "${key}".`, err);
+        console.warn("[MGK] Não foi possível ler \"%s\".", key, err);
       }
       const inicial = structuredClone(seed() || []);
       this.write(inicial);
@@ -272,7 +274,7 @@
       try {
         localStorage.setItem(key, JSON.stringify(list));
       } catch (err) {
-        console.warn(`[MGK] Não foi possível salvar "${key}".`, err);
+        console.warn("[MGK] Não foi possível salvar \"%s\".", key, err);
       }
     },
     reset() {
