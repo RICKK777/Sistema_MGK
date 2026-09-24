@@ -14,6 +14,10 @@ Não há build nem dependências para instalar. Bootstrap, Bootstrap Icons e a f
   - Node: `npx serve .`
   - Python: `python -m http.server 8080` e acessar http://localhost:8080
 
+## Estudar o código
+
+O guia [docs/GUIA-JAVASCRIPT.md](docs/GUIA-JAVASCRIPT.md) explica todo o JavaScript, arquivo por arquivo. Ele traz um roteiro para reconstruir o sistema do zero e exercícios.
+
 ## Estrutura
 
 ```text
