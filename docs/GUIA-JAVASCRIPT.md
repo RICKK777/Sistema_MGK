@@ -535,7 +535,36 @@ Object.entries(mascaras).forEach(([id, mask]) => {
 
 `Object.entries` transforma o objeto em pares `[chave, valor]`. Cada campo ganha um listener que reescreve o valor mascarado a cada tecla. É um padrão **orientado a dados**: para mascarar um campo novo, basta adicionar uma linha no objeto.
 
-### 6.3 Validação com a API nativa do navegador ([linhas 54–92](../js/cadastro-cliente.js#L54-L92))
+### 6.3 Endereço pelo CEP com a API ViaCEP ([linhas 51–118](../js/cadastro-cliente.js#L51-L118))
+
+Quando o CEP fica com 8 dígitos, a tela consulta `https://viacep.com.br/ws/<cep>/json/` e preenche rua, bairro, cidade e estado. É o primeiro trecho do projeto que **conversa com um servidor**, então apresenta três conceitos novos:
+
+**`fetch` + `async/await`.** `fetch(url)` faz a requisição e devolve uma *Promise* (um valor que chega no futuro). Numa função `async`, o `await` "espera" a Promise sem travar a página:
+
+```js
+const resposta = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`); // 404, 500... não caem no catch sozinhos
+const dados = await resposta.json(); // converte o corpo da resposta em objeto
+```
+
+A resposta do ViaCEP tem campos com nomes próprios, que o código traduz para os ids do formulário: `logradouro` → `rua`, `localidade` → `cidade`, `uf` → `estado`. Um CEP inexistente não dá erro HTTP: vem `{ "erro": true }`, por isso o `if (dados.erro)`.
+
+**`AbortController` (cancelar a requisição).** Serve para dois casos:
+- **Tempo limite**: `setTimeout(() => controle.abort(), 8000)` desiste depois de 8 segundos se a API não responder.
+- **Resposta atrasada**: se o usuário apaga o CEP ou digita outro enquanto a primeira busca ainda está em andamento, a busca antiga é cancelada (`cancelarBuscaCep`). A verificação `if (buscaCep !== controle) return` garante que uma resposta velha nunca sobrescreva o endereço do CEP novo. Esse problema tem nome: *race condition* (condição de corrida).
+
+**`try / catch / finally`.** O `catch` pega falhas de rede, tempo esgotado e respostas inválidas, e só mostra a mensagem "preencha manualmente" se aquela ainda for a busca atual. O `finally` roda sempre, dando certo ou errado, e é usado para limpar o `setTimeout`.
+
+Outros detalhes:
+- `cepBuscado` evita buscar de novo o mesmo CEP (por exemplo, quando a máscara reescreve o campo).
+- Só preenche os campos que vieram com valor (`if (valor)`), porque CEPs gerais de cidade vêm sem rua e bairro. O foco vai para **Número** se veio a rua, ou para **Rua** se não veio.
+- A mensagem aparece em `#cepStatus`, que tem `aria-live="polite"` para leitores de tela anunciarem o resultado.
+- Os valores são colocados com `.value` (nunca `innerHTML`), então o que vem da API não é interpretado como HTML.
+- No modo edição, o `preencher` muda o valor do CEP pelo código, o que **não** dispara o evento `input`. Por isso, abrir um cliente para editar não refaz a busca nem apaga o endereço salvo.
+
+Para testar no console: `fetch("https://viacep.com.br/ws/01001000/json/").then(r => r.json()).then(console.log)`.
+
+### 6.4 Validação com a API nativa do navegador ([linhas 123–161](../js/cadastro-cliente.js#L123-L161))
 
 O projeto usa a **Constraint Validation API** + estilos do Bootstrap:
 
@@ -551,13 +580,13 @@ Regras de `validarCampos()`:
 
 Experiência do usuário: nada fica vermelho enquanto a pessoa digita pela primeira vez. Só depois da primeira tentativa de salvar (`was-validated`), a validação passa a rodar a cada `input`.
 
-### 6.4 Modo edição ([linhas 97–129](../js/cadastro-cliente.js#L97-L129))
+### 6.5 Modo edição ([linhas 166–198](../js/cadastro-cliente.js#L166-L198))
 
 - Se o id não existe: `ui.flash` + `location.replace("clientes.html")` (o `replace` não deixa a página inválida no histórico do botão Voltar) e `return` encerra a IIFE.
 - Ajusta títulos, breadcrumb, texto do botão e mostra o interruptor de status.
 - `preencher(cliente)` copia cada campo e reaplica as máscaras.
 
-### 6.5 Salvar ([linhas 134–166](../js/cadastro-cliente.js#L134-L166))
+### 6.6 Salvar ([linhas 203–235](../js/cadastro-cliente.js#L203-L235))
 
 1. `preventDefault()` e adiciona `was-validated`.
 2. Se inválido: foca e rola até o primeiro campo `:invalid`, mostra toast e para.
@@ -726,7 +755,7 @@ Do mais fácil ao mais difícil. Tente sem olhar a solução no código.
 
 1. No console, rode `MGK.format.cnpj("12345678000195")`, `MGK.validate.cpf("11111111111")` e `MGK.format.moedaInput("123456")`. Explique cada resultado.
 2. Adicione um campo "Data de nascimento" ao cadastro de cliente (HTML, `CAMPOS`, exibição na ficha).
-3. Crie `format.cepSemMascara` e um botão que busca o endereço pelo CEP na API pública ViaCEP (`fetch("https://viacep.com.br/ws/01001000/json/")`) e preenche rua/bairro/cidade/UF.
+3. Na busca de CEP, mostre um ícone girando (`spinner-border spinner-border-sm` do Bootstrap) enquanto a API responde e desabilite os campos de endereço até a resposta chegar.
 4. Mostre na tabela de clientes uma coluna "Total gasto" usando `vendas.resumoCliente`.
 5. Permita **cancelar** uma venda na tela de detalhes (novo método `vendas.cancelar(id)` no repositório, mudando o `status`).
 6. Adicione um filtro "Somente ativos" na consulta de clientes.

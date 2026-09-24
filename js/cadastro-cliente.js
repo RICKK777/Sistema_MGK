@@ -49,6 +49,75 @@
   });
 
   /* ------------------------------------------------------------------------
+     Endereço pelo CEP (ViaCEP)
+     Com os 8 dígitos digitados, busca o endereço e preenche rua, bairro,
+     cidade e estado. Se a busca falhar, o usuário preenche manualmente.
+     ------------------------------------------------------------------------ */
+  const cepStatus = $("cepStatus");
+  let cepBuscado = "";
+  let buscaCep = null; // AbortController da busca em andamento
+
+  const statusCep = (texto, classe = "") => {
+    cepStatus.textContent = texto;
+    cepStatus.className = `form-text ${classe}`;
+  };
+
+  const cancelarBuscaCep = () => {
+    const anterior = buscaCep;
+    buscaCep = null;
+    anterior?.abort();
+  };
+
+  const buscarEndereco = async (cep) => {
+    cancelarBuscaCep();
+    const controle = new AbortController();
+    buscaCep = controle;
+    const limite = setTimeout(() => controle.abort(), 8000);
+    statusCep("Buscando endereço...");
+
+    try {
+      const resposta = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: controle.signal });
+      if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+      const dados = await resposta.json();
+      if (buscaCep !== controle) return; // o CEP mudou enquanto a resposta chegava
+
+      if (dados.erro) {
+        statusCep("CEP não encontrado. Confira o número ou preencha o endereço manualmente.", "text-danger");
+        return;
+      }
+
+      // CEPs gerais de cidade vêm sem rua/bairro; nesse caso mantém o que já foi digitado
+      const endereco = { rua: dados.logradouro, bairro: dados.bairro, cidade: dados.localidade, estado: dados.uf };
+      Object.entries(endereco).forEach(([id, valor]) => {
+        if (valor) $(id).value = valor;
+      });
+      statusCep("Endereço preenchido pelo CEP.", "text-success");
+      $(dados.logradouro ? "numero" : "rua").focus();
+      if (form.classList.contains("was-validated")) validarCampos();
+    } catch (err) {
+      if (buscaCep !== controle) return; // cancelada por uma nova busca
+      console.warn("[MGK] Falha ao buscar o CEP.", err);
+      statusCep("Não foi possível buscar o CEP agora. Preencha o endereço manualmente.", "text-danger");
+    } finally {
+      clearTimeout(limite);
+      if (buscaCep === controle) buscaCep = null;
+    }
+  };
+
+  $("cep").addEventListener("input", (event) => {
+    const cep = onlyDigits(event.target.value);
+    if (cep.length !== 8) {
+      cepBuscado = "";
+      cancelarBuscaCep();
+      statusCep("");
+      return;
+    }
+    if (cep === cepBuscado) return;
+    cepBuscado = cep;
+    buscarEndereco(cep);
+  });
+
+  /* ------------------------------------------------------------------------
      Validação
      ------------------------------------------------------------------------ */
   const validarCampos = () => {

@@ -44,6 +44,7 @@ sistema-mgk/
 - Busca por **nome** (ignora acentos e maiúsculas) ou por **CPF/CNPJ** (com ou sem pontuação)
 - Tabela responsiva, com rolagem horizontal em telas pequenas, e estado de "nenhum cliente encontrado"
 - Máscaras de CPF/CNPJ, telefone e CEP; validação dos dígitos de CPF/CNPJ e bloqueio de documento duplicado
+- Endereço preenchido automaticamente pelo CEP (API pública [ViaCEP](https://viacep.com.br)); se a busca falhar, o endereço é digitado manualmente
 - Status Ativo/Inativo (definido na edição; novos clientes são cadastrados como ativos)
 
 ### Ficha do cliente
