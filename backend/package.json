@@ -1,0 +1,19 @@
+{
+  "name": "sistema-mgk-backend",
+  "version": "1.0.0",
+  "description": "API do Sistema MGK (Node.js + Express + MySQL)",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --env-file=.env src/server.js",
+    "dev": "node --watch --env-file=.env src/server.js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "mysql2": "^3.24.4"
+  }
+}
