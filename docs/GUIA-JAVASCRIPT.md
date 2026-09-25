@@ -4,6 +4,8 @@ Este guia explica **todo** o JavaScript do projeto: como os arquivos se conectam
 
 > Dica: leia com o código aberto ao lado. Os links do tipo [app.js:23](../js/app.js#L23) levam direto para a linha citada.
 
+> **Atualização (preparação para o back-end):** os repositórios `MGK.clientes`, `MGK.produtos` e `MGK.vendas` agora são **assíncronos**, e as telas os chamam com `await` (ex.: `const lista = await MGK.clientes.buscar(termo)`). Existem duas implementações de cada um, uma para o localStorage e outra para a API, escolhidas em `js/config.js`. Por isso alguns trechos e números de linha deste guia mostram a versão síncrona anterior. A lógica de cada função continua a mesma. Detalhes em [BANCO-DE-DADOS.md](BANCO-DE-DADOS.md).
+
 ---
 
 ## Sumário

@@ -6,7 +6,7 @@
 (function () {
   "use strict";
 
-  const { clientes, produtos, vendas, format, escapeHtml, initials, ui } = window.MGK;
+  const { clientes, produtos, vendas, format, escapeHtml, initials, mesmoId, modoApi, ui } = window.MGK;
 
   const el = {
     form: document.getElementById("formBusca"),
@@ -89,9 +89,19 @@
       : `<strong>${total}</strong> ${total === 1 ? "cliente" : "clientes"}`;
   };
 
-  const buscar = () => {
+  let buscaAtual = 0; // descarta respostas de buscas antigas que cheguem atrasadas
+
+  const buscar = async () => {
     const termo = el.campo.value.trim();
-    render(clientes.buscar(termo), termo);
+    const minhaBusca = ++buscaAtual;
+    try {
+      const lista = await clientes.buscar(termo);
+      if (minhaBusca === buscaAtual) render(lista, termo);
+    } catch (err) {
+      if (minhaBusca !== buscaAtual) return;
+      el.contador.textContent = "Não foi possível carregar os clientes.";
+      ui.toast(err.message || "Não foi possível carregar os clientes.", "error");
+    }
   };
 
   const limpar = () => {
@@ -124,8 +134,8 @@
   const produtosResumo = (venda) =>
     venda.produtos.map((p) => `${p.nome} (${p.quantidade}x)`).join(", ");
 
-  const resumoCompras = (clienteId) => {
-    const r = vendas.resumoCliente(clienteId);
+  const resumoCompras = (compras) => {
+    const r = vendas.resumir(compras);
     return `
       <div class="purchase-summary">
         <div class="purchase-stat">
@@ -143,12 +153,10 @@
       </div>`;
   };
 
-  const historicoCompras = (clienteId, { aberto = false, destaque = null } = {}) => {
-    const compras = vendas.porCliente(clienteId);
-
+  const historicoCompras = (clienteId, compras, { aberto = false, destaque = null } = {}) => {
     const conteudo = compras.length
       ? `
-        ${resumoCompras(clienteId)}
+        ${resumoCompras(compras)}
         <div class="table-responsive">
           <table class="table table-mgk table-hover align-middle purchase-table">
             <thead>
@@ -163,7 +171,7 @@
             </thead>
             <tbody>
               ${compras.map((v) => `
-                <tr class="purchase-row${v.id === destaque ? " is-new" : ""}" data-venda="${escapeHtml(v.id)}"
+                <tr class="purchase-row${mesmoId(v.id, destaque) ? " is-new" : ""}" data-venda="${escapeHtml(v.id)}"
                     tabindex="0" role="button" aria-label="Ver detalhes do pedido #${escapeHtml(v.numero)}">
                   <td class="text-mono">${format.data(v.data)}</td>
                   <td class="text-mono fw-semibold">#${escapeHtml(v.numero)}</td>
@@ -207,8 +215,15 @@
    * @param {string} id
    * @param {{aberto?: boolean, destaque?: string}} [opcoes] histórico já aberto e venda a destacar
    */
-  const abrirVisualizacao = (id, opcoes = {}) => {
-    const c = clientes.obter(id);
+  const abrirVisualizacao = async (id, opcoes = {}) => {
+    let c;
+    let compras;
+    try {
+      [c, compras] = await Promise.all([clientes.obter(id), vendas.porCliente(id)]);
+    } catch (err) {
+      ui.toast(err.message || "Não foi possível abrir a ficha do cliente.", "error");
+      return;
+    }
     if (!c) {
       ui.toast("Cliente não encontrado.", "error");
       return;
@@ -225,7 +240,7 @@
     document.getElementById("modalClienteCorpo").innerHTML = `
       <div class="detail-section">
         <div class="detail-section-title">Resumo de compras</div>
-        <div class="client-summary">${resumoCompras(c.id)}</div>
+        <div class="client-summary">${resumoCompras(compras)}</div>
       </div>
       <div class="detail-section">
         <div class="detail-section-title">Dados pessoais</div>
@@ -254,7 +269,7 @@
           ${campo("Última atualização", format.data(c.atualizadoEm || c.criadoEm))}
         </div>
       </div>
-      ${historicoCompras(c.id, opcoes)}`;
+      ${historicoCompras(c.id, compras, opcoes)}`;
 
     modal.show();
 
@@ -270,13 +285,20 @@
      A ficha do cliente é escondida enquanto os detalhes estão abertos e volta
      pelo botão "Voltar para a ficha" (o Bootstrap não empilha modais).
      ------------------------------------------------------------------------ */
-  const abrirVenda = (vendaId) => {
-    const v = vendas.obter(vendaId);
+  const abrirVenda = async (vendaId) => {
+    let v;
+    let c;
+    try {
+      v = await vendas.obter(vendaId);
+      if (v) c = await clientes.obter(v.clienteId);
+    } catch (err) {
+      ui.toast(err.message || "Não foi possível abrir a venda.", "error");
+      return;
+    }
     if (!v) {
       ui.toast("Venda não encontrada.", "error");
       return;
     }
-    const c = clientes.obter(v.clienteId);
 
     document.getElementById("modalVendaTitulo").textContent = `Pedido #${v.numero}`;
     document.getElementById("modalVendaData").textContent = new Date(v.data).toLocaleString("pt-BR", {
@@ -375,13 +397,17 @@
   el.btnLimpar.addEventListener("click", limpar);
   el.btnLimparVazio.addEventListener("click", limpar);
 
-  el.btnRestaurar.addEventListener("click", () => {
+  // Com o back-end ligado os dados são reais: a restauração da demonstração só existe no modo local
+  el.btnRestaurar.hidden = modoApi;
+  el.btnRestaurar.addEventListener("click", async () => {
     if (!confirm("Restaurar os clientes, produtos e vendas fictícios de demonstração? Os cadastros e vendas feitos neste navegador serão descartados.")) return;
-    clientes.restaurarDemonstracao();
-    produtos.restaurarDemonstracao();
-    vendas.restaurarDemonstracao();
+    await Promise.all([
+      clientes.restaurarDemonstracao(),
+      produtos.restaurarDemonstracao(),
+      vendas.restaurarDemonstracao(),
+    ]);
     el.campo.value = "";
-    buscar();
+    await buscar();
     ui.toast("Dados de demonstração restaurados.");
   });
 

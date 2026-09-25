@@ -18,6 +18,8 @@ Não há build nem dependências para instalar. Bootstrap, Bootstrap Icons e a f
 
 O guia [docs/GUIA-JAVASCRIPT.md](docs/GUIA-JAVASCRIPT.md) explica todo o JavaScript, arquivo por arquivo. Ele traz um roteiro para reconstruir o sistema do zero e exercícios.
 
+O guia [docs/BANCO-DE-DADOS.md](docs/BANCO-DE-DADOS.md) traz as tabelas do MySQL, o script SQL e o contrato da API para ligar o sistema a um back-end.
+
 ## Estrutura
 
 ```text
@@ -28,9 +30,13 @@ sistema-mgk/
 ├── venda.html              # Cadastro de venda (?cliente=... pré-seleciona o cliente)
 ├── css/
 │   └── style.css           # Tema MGK (amarelo + preto) sobre o Bootstrap
+├── docs/
+│   ├── GUIA-JAVASCRIPT.md  # Explicação do JavaScript
+│   └── BANCO-DE-DADOS.md   # Tabelas MySQL + contrato da API
 ├── js/
+│   ├── config.js           # Modo de dados: "local" (localStorage) ou "api" (back-end)
 │   ├── mock-data.js        # Clientes, produtos e vendas FICTÍCIOS de demonstração
-│   ├── app.js              # Núcleo: repositórios (localStorage), máscaras, validações, toasts
+│   ├── app.js              # Núcleo: repositórios (local/API), cliente HTTP, máscaras, validações, toasts
 │   ├── clientes.js         # Lógica da consulta e da ficha do cliente
 │   ├── cadastro-cliente.js # Lógica da tela de cadastro/edição
 │   └── venda.js            # Lógica do cadastro de venda
@@ -65,7 +71,12 @@ sistema-mgk/
 
 ## Dados
 
-Todos os dados de demonstração são **fictícios** e ficam no `localStorage` do navegador:
+O lugar onde os dados ficam é definido em `js/config.js`:
+
+- `modo: "local"` (padrão): os dados ficam no `localStorage` do navegador. Não precisa de servidor.
+- `modo: "api"`: os dados vêm do back-end em `apiUrl`, gravados no MySQL. Veja [docs/BANCO-DE-DADOS.md](docs/BANCO-DE-DADOS.md).
+
+No modo local, os dados de demonstração são **fictícios** e ficam nestas chaves do `localStorage`:
 
 | Chave              | Conteúdo  |
 | ------------------ | --------- |
@@ -73,7 +84,7 @@ Todos os dados de demonstração são **fictícios** e ficam no `localStorage` d
 | `mgk.produtos.v1`  | Produtos  |
 | `mgk.vendas.v1`    | Vendas    |
 
-O botão **"Restaurar dados de demonstração"**, na tela de clientes, volta à carga inicial de todos eles.
+O botão **"Restaurar dados de demonstração"**, na tela de clientes, volta à carga inicial de todos eles. No modo API ele não aparece.
 
 Estrutura das vendas:
 
@@ -88,12 +99,14 @@ Estrutura das vendas:
 
 > Os campos do cliente seguem a estrutura já existente: `documento` corresponde ao CPF/CNPJ e o endereço está dividido em `cep`, `rua`, `numero`, `complemento`, `bairro`, `cidade` e `estado`.
 
-## Próximos passos (integração com back-end)
+## Integração com back-end
 
-Toda leitura e escrita de dados passa pelos repositórios de `js/app.js`:
+Toda leitura e escrita de dados passa pelos repositórios de `js/app.js`. Cada um tem duas implementações com a mesma interface, uma para o localStorage e outra para a API, e as telas não sabem qual está em uso:
 
 - `MGK.clientes`: `listar`, `obter`, `buscar`, `salvar`, `documentoEmUso`
 - `MGK.produtos`: `listar`, `obter`
-- `MGK.vendas`: `listar`, `obter`, `porCliente`, `resumoCliente`, `calcular`, `registrar`
+- `MGK.vendas`: `listar`, `obter`, `porCliente`, `registrar` + regras `calcular`, `resumir`, `resumoCliente`
 
-Para ligar a uma API, troque a implementação desses métodos por chamadas HTTP (o número do pedido e a data passam a vir do servidor). Como elas serão assíncronas, as chamadas nas telas também vão precisar de `await`, mas a estrutura das telas continua a mesma.
+Os métodos que acessam dados são **assíncronos** (devolvem `Promise`) e são chamados com `await` nas telas. Erros chegam como `MGK.ErroMGK`, com `message` para o usuário e `status` HTTP.
+
+Para ligar o back-end: implemente a API descrita em [docs/BANCO-DE-DADOS.md](docs/BANCO-DE-DADOS.md) e troque `modo` para `"api"` em `js/config.js`.

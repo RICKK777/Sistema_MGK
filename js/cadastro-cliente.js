@@ -119,7 +119,29 @@
 
   /* ------------------------------------------------------------------------
      Validação
+     A checagem de CPF/CNPJ repetido consulta os dados (assíncrona), então roda ao sair do
+     campo e ao salvar; o resultado fica em `documentoDuplicado` para a validação em tempo real.
      ------------------------------------------------------------------------ */
+  let documentoDuplicado = "";
+
+  /** Consulta se o documento digitado já pertence a outro cliente. Em falha de conexão, deixa o servidor decidir ao salvar. */
+  const verificarDocumento = async () => {
+    const doc = onlyDigits($("documento").value);
+    if (!validate.documento(doc)) return;
+    try {
+      const emUso = await clientes.documentoEmUso(doc, idEdicao);
+      if (onlyDigits($("documento").value) !== doc) return; // o campo mudou durante a consulta
+      documentoDuplicado = emUso ? doc : "";
+    } catch (err) {
+      console.warn("[MGK] Não foi possível verificar o documento.", err);
+    }
+  };
+
+  $("documento").addEventListener("change", async () => {
+    await verificarDocumento();
+    if (form.classList.contains("was-validated")) validarCampos();
+  });
+
   const validarCampos = () => {
     const nome = $("nome");
     nome.setCustomValidity(nome.value.trim().length >= 3 ? "" : "invalid");
@@ -134,7 +156,7 @@
         digitos === 14 ? "CNPJ inválido. Verifique os números digitados." :
         "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos).";
       doc.setCustomValidity("invalid");
-    } else if (clientes.documentoEmUso(doc.value, idEdicao)) {
+    } else if (documentoDuplicado && onlyDigits(doc.value) === documentoDuplicado) {
       docFeedback.textContent = `Já existe um cliente cadastrado com este ${format.tipoDocumento(doc.value)}.`;
       doc.setCustomValidity("invalid");
     } else {
@@ -175,17 +197,10 @@
     $("status").checked = cliente.status !== "inativo";
   };
 
-  if (modoEdicao) {
-    const cliente = clientes.obter(idEdicao);
-    if (!cliente) {
-      ui.flash("Cliente não encontrado.", "error");
-      location.replace("clientes.html");
-      return;
-    }
-
+  const carregarEdicao = async () => {
     document.title = "Editar Cliente | Sistema MGK";
     $("tituloPagina").textContent = "Editar Cliente";
-    $("subtituloPagina").textContent = `Atualize os dados de ${cliente.nome}.`;
+    $("subtituloPagina").textContent = "Carregando dados do cliente...";
     $("breadcrumbAtual").textContent = "Editar";
     $("btnSalvarTexto").textContent = "Salvar Alterações";
     $("grupoStatus").hidden = false;
@@ -194,24 +209,33 @@
     menuCadastrar.classList.remove("active");
     menuCadastrar.removeAttribute("aria-current");
 
+    const btn = $("btnSalvar");
+    btn.disabled = true; // só libera depois que os dados chegarem
+
+    let cliente;
+    try {
+      cliente = await clientes.obter(idEdicao);
+    } catch (err) {
+      $("subtituloPagina").textContent = "Não foi possível carregar o cliente.";
+      ui.toast(err.message || "Não foi possível carregar o cliente.", "error");
+      return;
+    }
+    if (!cliente) {
+      ui.flash("Cliente não encontrado.", "error");
+      location.replace("clientes.html");
+      return;
+    }
+
+    $("subtituloPagina").textContent = `Atualize os dados de ${cliente.nome}.`;
     preencher(cliente);
-  }
+    btn.disabled = false;
+    $("nome").focus();
+  };
 
   /* ------------------------------------------------------------------------
      Salvar
      ------------------------------------------------------------------------ */
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    form.classList.add("was-validated");
-
-    if (!validarCampos()) {
-      const primeiroInvalido = form.querySelector(":invalid");
-      primeiroInvalido?.focus();
-      primeiroInvalido?.scrollIntoView({ behavior: "smooth", block: "center" });
-      ui.toast("Revise os campos destacados.", "error");
-      return;
-    }
-
+  const coletarDados = () => {
     const dados = {};
     CAMPOS.forEach((campo) => {
       dados[campo] = $(campo).value.trim();
@@ -221,18 +245,56 @@
     });
     if (!dados.id) delete dados.id;
     dados.status = modoEdicao && !$("status").checked ? "inativo" : "ativo";
+    return dados;
+  };
 
+  const mostrarInvalidos = () => {
+    const primeiroInvalido = form.querySelector(":invalid");
+    primeiroInvalido?.focus();
+    primeiroInvalido?.scrollIntoView({ behavior: "smooth", block: "center" });
+    ui.toast("Revise os campos destacados.", "error");
+  };
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
     const btn = $("btnSalvar");
+    if (btn.disabled) return;
+    form.classList.add("was-validated");
     btn.disabled = true;
+    let salvou = false;
 
-    const salvo = clientes.salvar(dados);
-    ui.flash(
-      modoEdicao
-        ? `Dados de ${salvo.nome} atualizados com sucesso.`
-        : `Cliente ${salvo.nome} cadastrado com sucesso.`
-    );
-    location.href = "clientes.html";
+    try {
+      if (validarCampos()) await verificarDocumento();
+      if (!validarCampos()) {
+        mostrarInvalidos();
+        return;
+      }
+
+      const salvo = await clientes.salvar(coletarDados());
+      salvou = true;
+      ui.flash(
+        modoEdicao
+          ? `Dados de ${salvo.nome} atualizados com sucesso.`
+          : `Cliente ${salvo.nome} cadastrado com sucesso.`
+      );
+      location.href = "clientes.html";
+    } catch (err) {
+      if (err.status === 409) {
+        // Outro cliente com o mesmo documento (detectado pelo servidor)
+        documentoDuplicado = onlyDigits($("documento").value);
+        validarCampos();
+        $("documento").focus();
+      }
+      ui.toast(err.message || "Não foi possível salvar o cliente.", "error");
+    } finally {
+      // Depois de salvar, o botão fica desabilitado enquanto a página troca
+      if (!salvou) btn.disabled = false;
+    }
   });
 
-  $("nome").focus();
+  if (modoEdicao) {
+    carregarEdicao();
+  } else {
+    $("nome").focus();
+  }
 })();

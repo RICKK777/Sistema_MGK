@@ -10,7 +10,7 @@
 (function () {
   "use strict";
 
-  const { clientes, produtos, vendas, format, escapeHtml, initials, ui } = window.MGK;
+  const { clientes, produtos, vendas, format, escapeHtml, initials, mesmoId, ui } = window.MGK;
 
   const QTD_MAX = 999;
   const $ = (id) => document.getElementById(id);
@@ -32,13 +32,13 @@
 
   /** Estado da venda em edição. */
   const venda = {
-    clienteId: null,
+    cliente: null,
     itens: [], // { uid, produtoId, quantidade, precoUnitario }
   };
   let proximoUid = 1;
 
-  const catalogo = produtos.listar();
-  const produtoPorId = (id) => catalogo.find((p) => p.id === id);
+  let catalogo = []; // carregado em iniciar()
+  const produtoPorId = (id) => catalogo.find((p) => mesmoId(p.id, id));
 
   const quantidadeValida = (q) => Number.isInteger(q) && q >= 1 && q <= QTD_MAX;
 
@@ -65,8 +65,20 @@
     el.busca.setAttribute("aria-activedescendant", ativa >= 0 ? `opcaoCliente${ativa}` : "");
   };
 
-  const renderOpcoes = () => {
-    opcoes = clientes.buscar(el.busca.value).slice(0, 8);
+  let buscaAtual = 0; // descarta respostas de buscas antigas que cheguem atrasadas
+
+  const renderOpcoes = async () => {
+    const minhaBusca = ++buscaAtual;
+    let encontrados;
+    try {
+      encontrados = await clientes.buscar(el.busca.value);
+    } catch (err) {
+      if (minhaBusca === buscaAtual) ui.toast(err.message || "Não foi possível buscar os clientes.", "error");
+      return;
+    }
+    if (minhaBusca !== buscaAtual) return;
+
+    opcoes = encontrados.slice(0, 8);
     ativa = -1;
     el.lista.innerHTML = opcoes.length
       ? opcoes.map((c, i) => `
@@ -84,10 +96,10 @@
     abrirLista(true);
   };
 
-  const selecionarCliente = (id) => {
-    const c = clientes.obter(id);
+  /** Recebe o cliente já carregado (da lista de opções ou da URL). */
+  const selecionarCliente = (c) => {
     if (!c) return;
-    venda.clienteId = c.id;
+    venda.cliente = c;
 
     $("clienteAvatar").textContent = initials(c.nome);
     $("clienteNome").innerHTML = `${escapeHtml(c.nome)}${c.status === "inativo" ? ' <span class="status-badge status-inativo ms-1">Inativo</span>' : ""}`;
@@ -106,7 +118,7 @@
   };
 
   const trocarCliente = () => {
-    venda.clienteId = null;
+    venda.cliente = null;
     el.selecionado.hidden = true;
     el.buscaGrupo.hidden = false;
     el.busca.value = "";
@@ -120,7 +132,11 @@
   el.busca.addEventListener("blur", () => setTimeout(() => abrirLista(false), 150));
 
   el.busca.addEventListener("keydown", (event) => {
-    if (el.lista.hidden && event.key === "ArrowDown") renderOpcoes();
+    if (el.lista.hidden && event.key === "ArrowDown") {
+      event.preventDefault();
+      renderOpcoes().then(() => marcarAtiva(opcoes.length ? 0 : -1));
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       marcarAtiva(Math.min(ativa + 1, opcoes.length - 1));
@@ -130,7 +146,7 @@
     } else if (event.key === "Enter") {
       event.preventDefault();
       const escolhido = opcoes[ativa >= 0 ? ativa : 0];
-      if (escolhido && (ativa >= 0 || opcoes.length === 1)) selecionarCliente(escolhido.id);
+      if (escolhido && (ativa >= 0 || opcoes.length === 1)) selecionarCliente(escolhido);
     } else if (event.key === "Escape") {
       abrirLista(false);
     }
@@ -140,7 +156,7 @@
     const li = event.target.closest(".client-option");
     if (!li) return;
     event.preventDefault();
-    selecionarCliente(li.dataset.id);
+    selecionarCliente(opcoes.find((c) => mesmoId(c.id, li.dataset.id)));
   });
 
   $("btnTrocarCliente").addEventListener("click", trocarCliente);
@@ -151,11 +167,9 @@
   // Na linha do item o preço padrão já aparece abaixo do campo de preço, então o select mostra só o nome
   const opcoesProduto = (selecionado, comPreco = true) =>
     catalogo.map((p) => `
-      <option value="${escapeHtml(p.id)}"${p.id === selecionado ? " selected" : ""}>
+      <option value="${escapeHtml(p.id)}"${mesmoId(p.id, selecionado) ? " selected" : ""}>
         ${escapeHtml(p.nome)}${comPreco ? ` — ${format.moeda(p.precoPadrao)}` : ""}
       </option>`).join("");
-
-  el.produtoNovo.insertAdjacentHTML("beforeend", opcoesProduto());
 
   const linhaItem = (item) => {
     const produto = produtoPorId(item.produtoId);
@@ -237,7 +251,7 @@
     }
 
     // Se o produto já está na venda, soma a quantidade na mesma linha
-    const existente = venda.itens.find((i) => i.produtoId === produto.id);
+    const existente = venda.itens.find((i) => mesmoId(i.produtoId, produto.id));
     if (existente) {
       existente.quantidade = Math.min((quantidadeValida(existente.quantidade) ? existente.quantidade : 0) + quantidade, QTD_MAX);
       ui.toast(`${produto.nome}: quantidade atualizada para ${existente.quantidade}.`);
@@ -331,7 +345,7 @@
      4. Finalizar venda
      ------------------------------------------------------------------------ */
   const validarVenda = () => {
-    if (!venda.clienteId) {
+    if (!venda.cliente) {
       el.busca.classList.add("is-invalid");
       el.clienteFeedback.classList.add("d-block");
       el.busca.focus();
@@ -358,8 +372,10 @@
     return null;
   };
 
-  el.form.addEventListener("submit", (event) => {
+  el.form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const btn = $("btnFinalizar");
+    if (btn.disabled) return; // evita registrar a mesma venda duas vezes
 
     const erro = validarVenda();
     if (erro) {
@@ -367,17 +383,18 @@
       return;
     }
 
+    btn.disabled = true;
     try {
-      const registrada = vendas.registrar({
-        clienteId: venda.clienteId,
+      const registrada = await vendas.registrar({
+        clienteId: venda.cliente.id,
         itens: venda.itens.map(({ produtoId, quantidade, precoUnitario }) => ({ produtoId, quantidade, precoUnitario })),
         desconto: format.parseMoeda(el.desconto.value),
       });
-      const cliente = clientes.obter(registrada.clienteId);
-      ui.flash(`Venda #${registrada.numero} registrada para ${cliente.nome} (${format.moeda(registrada.total)}).`);
+      ui.flash(`Venda #${registrada.numero} registrada para ${venda.cliente.nome} (${format.moeda(registrada.total)}).`);
       // Abre a ficha do cliente com o histórico aberto e a nova venda destacada
       location.href = `clientes.html?ver=${encodeURIComponent(registrada.clienteId)}&venda=${encodeURIComponent(registrada.id)}`;
     } catch (err) {
+      btn.disabled = false;
       ui.toast(err.message || "Não foi possível registrar a venda.", "error");
     }
   });
@@ -401,7 +418,22 @@
   /* ------------------------------------------------------------------------
      Inicialização
      ------------------------------------------------------------------------ */
-  renderItens();
-  const clienteInicial = new URLSearchParams(location.search).get("cliente");
-  if (clienteInicial && clientes.obter(clienteInicial)) selecionarCliente(clienteInicial);
+  const iniciar = async () => {
+    renderItens();
+    const clienteInicial = new URLSearchParams(location.search).get("cliente");
+
+    try {
+      const [lista, cliente] = await Promise.all([
+        produtos.listar(),
+        clienteInicial ? clientes.obter(clienteInicial) : null,
+      ]);
+      catalogo = lista;
+      el.produtoNovo.insertAdjacentHTML("beforeend", opcoesProduto());
+      selecionarCliente(cliente);
+    } catch (err) {
+      ui.toast(err.message || "Não foi possível carregar os produtos.", "error");
+    }
+  };
+
+  iniciar();
 })();

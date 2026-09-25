@@ -1,13 +1,22 @@
 /**
  * Sistema MGK — núcleo compartilhado entre as telas.
  *
- * - MGK.clientes / MGK.produtos / MGK.vendas: repositórios de dados (hoje em localStorage; futuramente
- *   trocar por chamadas à API mantendo a mesma interface).
+ * - MGK.clientes / MGK.produtos / MGK.vendas: repositórios de dados. Todos os métodos que leem ou
+ *   gravam dados são ASSÍNCRONOS (devolvem Promise) e funcionam igual nos dois modos de js/config.js:
+ *     "local" → localStorage do navegador;  "api" → back-end HTTP (MySQL), via MGK.api.
  * - MGK.format / MGK.validate: máscaras e validações de CPF/CNPJ, telefone e CEP.
  * - MGK.ui: toast, mensagens entre páginas e utilidades de HTML.
  */
 (function () {
   "use strict";
+
+  const CONFIG = Object.freeze({
+    modo: "local",
+    apiUrl: "http://localhost:3000/api",
+    timeoutMs: 10000,
+    ...window.MGK_CONFIG,
+  });
+  const MODO_API = CONFIG.modo === "api";
 
   const STORAGE_KEY = "mgk.clientes.v1";
   // Nome da chave no localStorage (não é credencial).
@@ -45,6 +54,9 @@
     const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
     return (first + last).toUpperCase();
   };
+
+  /** Compara ids sem depender do tipo: no localStorage são texto ("c-0001"), no MySQL são números (1). */
+  const mesmoId = (a, b) => a != null && b != null && String(a) === String(b);
 
   /* ------------------------------------------------------------------------
      Formatação
@@ -165,7 +177,76 @@
   };
 
   /* ------------------------------------------------------------------------
-     Repositório de clientes (localStorage)
+     Erros e cliente HTTP (modo "api")
+     Contrato da API e tabelas do MySQL: docs/BANCO-DE-DADOS.md
+     ------------------------------------------------------------------------ */
+  /** Erro de dados com o status HTTP (0 = sem resposta do servidor; 404 = não encontrado; 409 = conflito). */
+  class ErroMGK extends Error {
+    constructor(message, status = 0, dados = null) {
+      super(message);
+      this.name = "ErroMGK";
+      this.status = status;
+      this.dados = dados;
+    }
+  }
+
+  const api = {
+    /**
+     * Faz a requisição e devolve o JSON da resposta.
+     * Em caso de erro, o back-end deve responder `{ "erro": "mensagem para o usuário" }`.
+     */
+    async request(metodo, caminho, corpo) {
+      const controle = new AbortController();
+      const limite = setTimeout(() => controle.abort(), CONFIG.timeoutMs);
+      const headers = { Accept: "application/json" };
+      if (corpo !== undefined) headers["Content-Type"] = "application/json";
+
+      let resposta;
+      let dados = null;
+      try {
+        resposta = await fetch(`${CONFIG.apiUrl}${caminho}`, {
+          method: metodo,
+          headers,
+          body: corpo === undefined ? undefined : JSON.stringify(corpo),
+          signal: controle.signal,
+        });
+        if (resposta.status !== 204) dados = await resposta.json().catch(() => null);
+      } catch (err) {
+        throw new ErroMGK(
+          err.name === "AbortError"
+            ? "O servidor demorou para responder. Tente novamente."
+            : "Não foi possível conectar ao servidor. Verifique a conexão."
+        );
+      } finally {
+        clearTimeout(limite);
+      }
+
+      if (!resposta.ok) {
+        throw new ErroMGK(dados?.erro || `Erro ${resposta.status} no servidor.`, resposta.status, dados);
+      }
+      return dados;
+    },
+    get: (caminho) => api.request("GET", caminho),
+    post: (caminho, corpo) => api.request("POST", caminho, corpo),
+    put: (caminho, corpo) => api.request("PUT", caminho, corpo),
+  };
+
+  /** Transforma um 404 em `null` (para os métodos `obter`). */
+  const ouNulo = (promessa) =>
+    promessa.catch((err) => {
+      if (err.status === 404) return null;
+      throw err;
+    });
+
+  const rota = (base, id) => `${base}/${encodeURIComponent(id)}`;
+  const query = (params) => new URLSearchParams(params).toString();
+
+  const porNome = (lista) => lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+
+  /* ------------------------------------------------------------------------
+     Repositório de clientes
+     Cliente: { id, nome, documento, telefone, celular, email, cep, rua, numero, complemento,
+                bairro, cidade, estado, status, criadoEm, atualizadoEm }
      ------------------------------------------------------------------------ */
   const read = () => {
     try {
@@ -207,18 +288,18 @@
   const randomSuffix = () => crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(4, "0").slice(-4);
   const newId = () => `c-${Date.now().toString(36)}${randomSuffix()}`;
 
-  const clientes = {
-    listar() {
-      return read().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const clientesLocal = {
+    async listar() {
+      return porNome(read());
     },
 
-    obter(id) {
-      return read().find((c) => c.id === id) || null;
+    async obter(id) {
+      return read().find((c) => mesmoId(c.id, id)) || null;
     },
 
     /** Busca por nome (sem diferenciar acentos/maiúsculas) ou por CPF/CNPJ (com ou sem máscara). */
-    buscar(termo) {
-      const todos = clientes.listar();
+    async buscar(termo) {
+      const todos = porNome(read());
       const texto = normalize(termo);
       if (!texto) return todos;
       const digitos = onlyDigits(termo);
@@ -228,15 +309,19 @@
       );
     },
 
-    documentoEmUso(documento, ignorarId) {
+    async documentoEmUso(documento, ignorarId) {
       const d = onlyDigits(documento);
-      return read().some((c) => c.documento === d && c.id !== ignorarId);
+      return read().some((c) => c.documento === d && !mesmoId(c.id, ignorarId));
     },
 
-    salvar(dados) {
+    /** Cria (sem id) ou atualiza (com id). Documento repetido gera ErroMGK 409, como na API. */
+    async salvar(dados) {
       const lista = read();
       const registro = { ...dados, documento: onlyDigits(dados.documento) };
-      const idx = registro.id ? lista.findIndex((c) => c.id === registro.id) : -1;
+      if (lista.some((c) => c.documento === registro.documento && !mesmoId(c.id, registro.id))) {
+        throw new ErroMGK("Já existe um cliente cadastrado com este documento.", 409);
+      }
+      const idx = registro.id ? lista.findIndex((c) => mesmoId(c.id, registro.id)) : -1;
 
       if (idx >= 0) {
         lista[idx] = { ...lista[idx], ...registro, atualizadoEm: new Date().toISOString() };
@@ -250,10 +335,35 @@
       return idx >= 0 ? lista[idx] : registro;
     },
 
-    restaurarDemonstracao() {
+    async restaurarDemonstracao() {
       write(structuredClone(window.MGK_MOCK_CLIENTES || []));
     },
   };
+
+  const clientesApi = {
+    listar: () => api.get("/clientes"),
+
+    obter: (id) => ouNulo(api.get(rota("/clientes", id))),
+
+    /** A regra de busca (nome sem acentos ou CPF/CNPJ) fica no back-end: GET /clientes?busca=... */
+    buscar(termo) {
+      const texto = String(termo ?? "").trim();
+      return texto ? api.get(`/clientes?${query({ busca: texto })}`) : clientesApi.listar();
+    },
+
+    async documentoEmUso(documento, ignorarId) {
+      const encontrados = await api.get(`/clientes?${query({ documento: onlyDigits(documento) })}`);
+      return encontrados.some((c) => !mesmoId(c.id, ignorarId));
+    },
+
+    /** POST /clientes (novo) ou PUT /clientes/:id (edição). O servidor define id, status inicial e datas. */
+    salvar(dados) {
+      const { id, criadoEm, atualizadoEm, ...corpo } = { ...dados, documento: onlyDigits(dados.documento) };
+      return id ? api.put(rota("/clientes", id), corpo) : api.post("/clientes", corpo);
+    },
+  };
+
+  const clientes = MODO_API ? clientesApi : clientesLocal;
 
   /* ------------------------------------------------------------------------
      Armazenamento genérico (produtos e vendas)
@@ -288,19 +398,26 @@
      ------------------------------------------------------------------------ */
   const produtosStore = store(PRODUTOS_KEY, () => window.MGK_MOCK_PRODUTOS);
 
-  const produtos = {
-    listar() {
-      return produtosStore.read().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const produtosLocal = {
+    async listar() {
+      return porNome(produtosStore.read());
     },
 
-    obter(id) {
-      return produtosStore.read().find((p) => p.id === id) || null;
+    async obter(id) {
+      return produtosStore.read().find((p) => mesmoId(p.id, id)) || null;
     },
 
-    restaurarDemonstracao() {
+    async restaurarDemonstracao() {
       produtosStore.reset();
     },
   };
+
+  const produtosApi = {
+    listar: () => api.get("/produtos"),
+    obter: (id) => ouNulo(api.get(rota("/produtos", id))),
+  };
+
+  const produtos = MODO_API ? produtosApi : produtosLocal;
 
   /* ------------------------------------------------------------------------
      Repositório de vendas
@@ -311,34 +428,12 @@
      ------------------------------------------------------------------------ */
   const vendasStore = store(VENDAS_KEY, () => window.MGK_MOCK_VENDAS);
 
-  const vendas = {
+  /** Regras que valem nos dois modos (não acessam dados). */
+  const vendasRegras = {
     STATUS: {
       concluido: "Concluído",
       andamento: "Em andamento",
       cancelado: "Cancelado",
-    },
-
-    listar() {
-      return vendasStore.read().sort((a, b) => b.data.localeCompare(a.data) || b.numero.localeCompare(a.numero));
-    },
-
-    obter(id) {
-      return vendasStore.read().find((v) => v.id === id) || null;
-    },
-
-    /** Vendas do cliente, da mais recente para a mais antiga. */
-    porCliente(clienteId) {
-      return vendas.listar().filter((v) => v.clienteId === clienteId);
-    },
-
-    /** Resumo da ficha do cliente. Vendas canceladas não entram na conta. */
-    resumoCliente(clienteId) {
-      const validas = vendas.porCliente(clienteId).filter((v) => v.status !== "cancelado");
-      return {
-        quantidade: validas.length,
-        totalGasto: centavos(validas.reduce((acc, v) => acc + v.total, 0)),
-        ultimaCompra: validas.length ? validas[0].data : null,
-      };
     },
 
     /** Calcula subtotais e total a partir dos itens (mesma regra usada na tela e no registro). */
@@ -349,35 +444,65 @@
       return { itens: linhas, subtotal, desconto: descontoAplicado, total: centavos(subtotal - descontoAplicado) };
     },
 
-    proximoNumero() {
-      const maior = vendasStore.read().reduce((max, v) => Math.max(max, Number(v.numero) || 0), 0);
-      return String(maior + 1).padStart(6, "0");
+    /** Resumo da ficha a partir das vendas de um cliente. Vendas canceladas não entram na conta. */
+    resumir(lista) {
+      const validas = lista.filter((v) => v.status !== "cancelado");
+      return {
+        quantidade: validas.length,
+        totalGasto: centavos(validas.reduce((acc, v) => acc + Number(v.total), 0)),
+        ultimaCompra: validas.reduce((ultima, v) => (!ultima || v.data > ultima ? v.data : ultima), null),
+      };
+    },
+
+    async resumoCliente(clienteId) {
+      return vendasRegras.resumir(await vendas.porCliente(clienteId));
+    },
+  };
+
+  const proximoNumero = () => {
+    const maior = vendasStore.read().reduce((max, v) => Math.max(max, Number(v.numero) || 0), 0);
+    return String(maior + 1).padStart(6, "0");
+  };
+
+  const vendasLocal = {
+    async listar() {
+      return vendasStore.read().sort((a, b) => b.data.localeCompare(a.data) || b.numero.localeCompare(a.numero));
+    },
+
+    async obter(id) {
+      return vendasStore.read().find((v) => mesmoId(v.id, id)) || null;
+    },
+
+    /** Vendas do cliente, da mais recente para a mais antiga. */
+    async porCliente(clienteId) {
+      return (await vendasLocal.listar()).filter((v) => mesmoId(v.clienteId, clienteId));
     },
 
     /**
      * Registra uma venda concluída e a vincula ao cliente.
      * @param {{clienteId: string, itens: {produtoId: string, quantidade: number, precoUnitario: number}[], desconto?: number}} dados
      */
-    registrar({ clienteId, itens, desconto = 0 }) {
-      if (!clientes.obter(clienteId)) throw new Error("Cliente não encontrado.");
-      if (!itens || !itens.length) throw new Error("Adicione pelo menos um produto.");
+    async registrar({ clienteId, itens, desconto = 0 }) {
+      if (!(await clientesLocal.obter(clienteId))) throw new ErroMGK("Cliente não encontrado.", 404);
+      if (!itens || !itens.length) throw new ErroMGK("Adicione pelo menos um produto.", 400);
 
-      const produtosVenda = itens.map((item) => {
-        const produto = produtos.obter(item.produtoId);
-        if (!produto) throw new Error("Produto não encontrado.");
-        if (!Number.isInteger(item.quantidade) || item.quantidade < 1) throw new Error("Quantidade inválida.");
-        if (!(item.precoUnitario > 0)) throw new Error("Preço unitário inválido.");
-        return {
+      const produtosVenda = [];
+      for (const item of itens) {
+        const produto = await produtosLocal.obter(item.produtoId);
+        if (!produto) throw new ErroMGK("Produto não encontrado.", 404);
+        if (!Number.isInteger(item.quantidade) || item.quantidade < 1) throw new ErroMGK("Quantidade inválida.", 400);
+        if (!(item.precoUnitario > 0)) throw new ErroMGK("Preço unitário inválido.", 400);
+        produtosVenda.push({
           produtoId: produto.id,
           nome: produto.nome,
           quantidade: item.quantidade,
           precoPadrao: produto.precoPadrao,
           precoUnitario: centavos(item.precoUnitario),
-        };
-      });
+        });
+      }
 
-      const calculo = vendas.calcular(produtosVenda, desconto);
-      const numero = vendas.proximoNumero();
+      const calculo = vendasRegras.calcular(produtosVenda, desconto);
+      const numero = proximoNumero();
       const venda = {
         id: `v-${numero}`,
         numero,
@@ -396,10 +521,26 @@
       return venda;
     },
 
-    restaurarDemonstracao() {
+    async restaurarDemonstracao() {
       vendasStore.reset();
     },
   };
+
+  const vendasApi = {
+    listar: () => api.get("/vendas"),
+
+    obter: (id) => ouNulo(api.get(rota("/vendas", id))),
+
+    porCliente: (clienteId) => api.get(`/vendas?${query({ clienteId })}`),
+
+    /**
+     * POST /vendas com { clienteId, itens: [{ produtoId, quantidade, precoUnitario }], desconto }.
+     * O servidor valida, recalcula os totais, gera número e data e devolve a venda completa.
+     */
+    registrar: ({ clienteId, itens, desconto = 0 }) => api.post("/vendas", { clienteId, itens, desconto }),
+  };
+
+  const vendas = { ...vendasRegras, ...(MODO_API ? vendasApi : vendasLocal) };
 
   /* ------------------------------------------------------------------------
      UI
@@ -448,7 +589,23 @@
     },
   };
 
-  window.MGK = { onlyDigits, normalize, escapeHtml, initials, format, validate, clientes, produtos, vendas, ui };
+  window.MGK = {
+    config: CONFIG,
+    modoApi: MODO_API,
+    api,
+    ErroMGK,
+    onlyDigits,
+    normalize,
+    escapeHtml,
+    initials,
+    mesmoId,
+    format,
+    validate,
+    clientes,
+    produtos,
+    vendas,
+    ui,
+  };
 
   document.addEventListener("DOMContentLoaded", () => {
     ui.consumeFlash();
