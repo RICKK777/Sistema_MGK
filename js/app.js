@@ -495,10 +495,13 @@
 
   /* ------------------------------------------------------------------------
      Repositório de vendas
-     Venda: { id, numero, clienteId, data, produtos, subtotal, desconto, total, status }
+     Venda: { id, numero, clienteId, data, produtos, subtotal, desconto, total, status, pagamentos }
      Produto na venda: { produtoId, nome, quantidade, precoPadrao, precoUnitario, subtotal }
        - precoUnitario é o preço PRATICADO nesta venda; precoPadrao é só um registro do preço de
          tabela no momento da venda. Alterar um não altera o outro.
+     Pagamento: { id, data, valor, forma, observacao }
+       - O cliente pode pagar só uma parte na hora e o restante depois, em quantas vezes quiser.
+         O saldo em aberto é total − soma dos pagamentos (veja vendas.pagamento()).
      ------------------------------------------------------------------------ */
   const vendasStore = store(VENDAS_KEY, () => window.MGK_MOCK_VENDAS);
 
@@ -508,6 +511,62 @@
       concluido: "Concluído",
       andamento: "Em andamento",
       cancelado: "Cancelado",
+    },
+
+    FORMAS_PAGAMENTO: {
+      dinheiro: "Dinheiro",
+      pix: "Pix",
+      debito: "Cartão de débito",
+      credito: "Cartão de crédito",
+      transferencia: "Transferência / depósito",
+      boleto: "Boleto",
+      outro: "Outro",
+    },
+
+    SITUACAO_PAGAMENTO: {
+      pago: "Pago",
+      parcial: "Pago em parte",
+      pendente: "Não pago",
+      cancelado: "—",
+    },
+
+    /** Quanto já foi pago e quanto falta. Venda cancelada não tem saldo a receber. */
+    pagamento(venda) {
+      const pago = centavos((venda.pagamentos || []).reduce((acc, p) => acc + Number(p.valor), 0));
+      if (venda.status === "cancelado") return { pago, saldo: 0, situacao: "cancelado" };
+      const saldo = centavos(Math.max(Number(venda.total) - pago, 0));
+      return { pago, saldo, situacao: saldo === 0 ? "pago" : pago > 0 ? "parcial" : "pendente" };
+    },
+
+    /**
+     * Conta em aberto do cliente: as vendas com saldo, da MAIS ANTIGA para a mais recente
+     * (é nessa ordem que um valor pago a mais é abatido).
+     * @returns {{ saldo: number, vendas: {venda: object, saldo: number}[] }}
+     */
+    contaEmAberto(vendasDoCliente) {
+      const abertas = vendasDoCliente
+        .map((venda) => ({ venda, saldo: vendasRegras.pagamento(venda).saldo }))
+        .filter((a) => a.saldo > 0)
+        .sort((a, b) => String(a.venda.data).localeCompare(String(b.venda.data)) || String(a.venda.numero).localeCompare(String(b.venda.numero)));
+      return { saldo: centavos(abertas.reduce((acc, a) => acc + a.saldo, 0)), vendas: abertas };
+    },
+
+    /**
+     * Divide o valor pago no ato de uma venda nova: primeiro quita a venda nova; o que sobrar
+     * abate a conta em aberto, da venda mais antiga para a mais recente.
+     * @returns {{ naVenda: number, abatimentos: {venda: object, valor: number}[] }}
+     */
+    distribuirPagamento(valor, totalVenda, conta) {
+      const naVenda = centavos(Math.min(valor, totalVenda));
+      let sobra = centavos(valor - naVenda);
+      const abatimentos = [];
+      for (const { venda, saldo } of conta.vendas) {
+        if (sobra <= 0) break;
+        const parte = centavos(Math.min(sobra, saldo));
+        abatimentos.push({ venda, valor: parte });
+        sobra = centavos(sobra - parte);
+      }
+      return { naVenda, abatimentos };
     },
 
     /** Calcula subtotais e total a partir dos itens (mesma regra usada na tela e no registro). */
@@ -524,6 +583,7 @@
       return {
         quantidade: validas.length,
         totalGasto: centavos(validas.reduce((acc, v) => acc + Number(v.total), 0)),
+        emAberto: centavos(validas.reduce((acc, v) => acc + vendasRegras.pagamento(v).saldo, 0)),
         ultimaCompra: validas.reduce((ultima, v) => (!ultima || v.data > ultima ? v.data : ultima), null),
       };
     },
@@ -538,13 +598,41 @@
     return String(maior + 1).padStart(6, "0");
   };
 
+  /**
+   * Vendas gravadas antes do controle de pagamentos não têm `pagamentos`: eram consideradas
+   * quitadas, então viram um pagamento único do total, na data da venda (forma não informada).
+   */
+  const comPagamentos = (v) => {
+    if (Array.isArray(v.pagamentos)) return v;
+    const quitada = v.status === "cancelado" ? [] : [{ id: `pg-${v.numero}-1`, data: v.data, valor: v.total, forma: null, observacao: "" }];
+    return { ...v, pagamentos: quitada };
+  };
+
+  const lerVendas = () => vendasStore.read().map(comPagamentos);
+
+  /**
+   * Valida o pagamento feito no ato da venda. Pode ser 0 (o cliente paga tudo depois) e pode passar
+   * do total da venda, até o total + a conta em aberto do cliente (a diferença abate a conta).
+   */
+  const validarPagamentoInicial = ({ valor = 0, forma } = {}, total, contaAnterior = 0) => {
+    const maximo = centavos(total + contaAnterior);
+    if (!(valor >= 0)) return "Valor recebido inválido.";
+    if (valor > maximo) {
+      return contaAnterior > 0
+        ? `O valor recebido não pode passar de ${format.moeda(maximo)} (total da venda + conta em aberto).`
+        : "O valor recebido não pode ser maior que o total da venda (o cliente não tem conta em aberto).";
+    }
+    if (valor > 0 && !vendasRegras.FORMAS_PAGAMENTO[forma]) return "Selecione a forma de pagamento.";
+    return null;
+  };
+
   const vendasLocal = {
     async listar() {
-      return vendasStore.read().sort((a, b) => b.data.localeCompare(a.data) || b.numero.localeCompare(a.numero));
+      return lerVendas().sort((a, b) => b.data.localeCompare(a.data) || b.numero.localeCompare(a.numero));
     },
 
     async obter(id) {
-      return vendasStore.read().find((v) => mesmoId(v.id, id)) || null;
+      return lerVendas().find((v) => mesmoId(v.id, id)) || null;
     },
 
     /** Vendas do cliente, da mais recente para a mais antiga. */
@@ -554,9 +642,13 @@
 
     /**
      * Registra uma venda concluída e a vincula ao cliente.
-     * @param {{clienteId: string, itens: {produtoId: string, quantidade: number, precoUnitario: number}[], desconto?: number}} dados
+     * `pagamento` é o que o cliente pagou NA HORA (0 = paga tudo depois); o resto fica em aberto.
+     * Se pagar MAIS que o total, a diferença abate a conta em aberto dele (vendas mais antigas primeiro).
+     * @param {{clienteId: string, itens: {produtoId: string, quantidade: number, precoUnitario: number}[],
+     *          desconto?: number, pagamento?: {valor: number, forma?: string}}} dados
+     * @returns a venda, com `abatimentos: [{ vendaId, numero, valor }]` (o que foi abatido de vendas anteriores)
      */
-    async registrar({ clienteId, itens, desconto = 0 }) {
+    async registrar({ clienteId, itens, desconto = 0, pagamento = { valor: 0 } }) {
       if (!(await clientesLocal.obter(clienteId))) throw new ErroMGK("Cliente não encontrado.", 404);
       if (!itens || !itens.length) throw new ErroMGK("Adicione pelo menos um produto.", 400);
 
@@ -576,22 +668,75 @@
         });
       }
 
+      const lista = lerVendas();
+      const conta = vendasRegras.contaEmAberto(lista.filter((v) => mesmoId(v.clienteId, clienteId)));
+
       const calculo = vendasRegras.calcular(produtosVenda, desconto);
+      const valorPago = centavos(pagamento.valor);
+      const erroPagamento = validarPagamentoInicial({ ...pagamento, valor: valorPago }, calculo.total, conta.saldo);
+      if (erroPagamento) throw new ErroMGK(erroPagamento, 400);
+
       const numero = proximoNumero();
+      const data = new Date().toISOString();
+      const { naVenda, abatimentos } = vendasRegras.distribuirPagamento(valorPago, calculo.total, conta);
       const venda = {
         id: `v-${numero}`,
         numero,
         clienteId,
-        data: new Date().toISOString(),
+        data,
         produtos: calculo.itens,
         subtotal: calculo.subtotal,
         desconto: calculo.desconto,
         total: calculo.total,
         status: "concluido",
+        pagamentos: naVenda > 0
+          ? [{ id: newId("pg"), data, valor: naVenda, forma: pagamento.forma, observacao: "Pago na venda" }]
+          : [],
       };
 
-      const lista = vendasStore.read();
+      // O que passou do total abate as vendas antigas (os objetos de `conta` são os mesmos de `lista`)
+      abatimentos.forEach(({ venda: antiga, valor }) => {
+        antiga.pagamentos.push({ id: newId("pg"), data, valor, forma: pagamento.forma, observacao: `Abatido na venda #${numero}` });
+      });
+
       lista.push(venda);
+      vendasStore.write(lista);
+      return {
+        ...venda,
+        abatimentos: abatimentos.map(({ venda: antiga, valor }) => ({ vendaId: antiga.id, numero: antiga.numero, valor })),
+      };
+    },
+
+    /**
+     * Registra um pagamento posterior (ex.: o cliente depositou mais uma parte).
+     * @param {string} vendaId
+     * @param {{valor: number, forma: string, data?: string, observacao?: string}} pagamento
+     *        `data` em ISO; sem data = agora.
+     * @returns a venda atualizada
+     */
+    async registrarPagamento(vendaId, { valor, forma, data, observacao = "" }) {
+      const lista = lerVendas();
+      const venda = lista.find((v) => mesmoId(v.id, vendaId));
+      if (!venda) throw new ErroMGK("Venda não encontrada.", 404);
+      if (venda.status === "cancelado") throw new ErroMGK("Venda cancelada não recebe pagamentos.", 400);
+
+      const { saldo } = vendasRegras.pagamento(venda);
+      const valorPago = centavos(valor);
+      const quando = data ? new Date(data) : new Date();
+      if (!(valorPago > 0)) throw new ErroMGK("Informe um valor maior que zero.", 400);
+      if (valorPago > saldo) throw new ErroMGK(`O valor passa do saldo em aberto (${format.moeda(saldo)}).`, 400);
+      if (!vendasRegras.FORMAS_PAGAMENTO[forma]) throw new ErroMGK("Selecione a forma de pagamento.", 400);
+      if (Number.isNaN(quando.getTime())) throw new ErroMGK("Data do pagamento inválida.", 400);
+      // Pode ser anterior à data da venda: pagamentos antigos (ex.: da planilha do Excel) são lançados depois
+      if (quando.getTime() > Date.now() + 5 * 60 * 1000) throw new ErroMGK("A data do pagamento não pode ser no futuro.", 400);
+
+      venda.pagamentos.push({
+        id: newId("pg"),
+        data: quando.toISOString(),
+        valor: valorPago,
+        forma,
+        observacao: String(observacao).trim().slice(0, 255),
+      });
       vendasStore.write(lista);
       return venda;
     },
@@ -609,10 +754,15 @@
     porCliente: (clienteId) => api.get(`/vendas?${query({ clienteId })}`),
 
     /**
-     * POST /vendas com { clienteId, itens: [{ produtoId, quantidade, precoUnitario }], desconto }.
+     * POST /vendas com { clienteId, itens: [{ produtoId, quantidade, precoUnitario }], desconto, pagamento }.
      * O servidor valida, recalcula os totais, gera número e data e devolve a venda completa.
      */
-    registrar: ({ clienteId, itens, desconto = 0 }) => api.post("/vendas", { clienteId, itens, desconto }),
+    registrar: ({ clienteId, itens, desconto = 0, pagamento = { valor: 0 } }) =>
+      api.post("/vendas", { clienteId, itens, desconto, pagamento }),
+
+    /** POST /vendas/:id/pagamentos com { valor, forma, data, observacao } → venda atualizada. */
+    registrarPagamento: (vendaId, { valor, forma, data, observacao = "" }) =>
+      api.post(`${rota("/vendas", vendaId)}/pagamentos`, { valor, forma, data, observacao }),
   };
 
   const vendas = { ...vendasRegras, ...(MODO_API ? vendasApi : vendasLocal) };

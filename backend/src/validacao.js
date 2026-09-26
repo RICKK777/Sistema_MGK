@@ -78,6 +78,38 @@ export function validarCliente(corpo = {}) {
 /** Arredonda para centavos, igual ao site. */
 export const centavos = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
+/** Formas de pagamento aceitas (as mesmas de MGK.vendas.FORMAS_PAGAMENTO no site). */
+export const FORMAS_PAGAMENTO = new Set(["dinheiro", "pix", "debito", "credito", "transferencia", "boleto", "outro"]);
+
+/**
+ * Valida um pagamento. `saldo` é o máximo que pode ser pago; `permitirZero` vale para o
+ * pagamento feito no ato da venda (0 = o cliente paga tudo depois).
+ * @returns {{ erro: string } | { dados: { valor: number, forma: string|null, observacao: string|null } }}
+ */
+export function validarPagamento(corpo = {}, saldo, { permitirZero = false } = {}) {
+  const dados = {
+    valor: centavos(corpo.valor),
+    forma: corpo.forma ? String(corpo.forma) : null,
+    observacao: opcional(corpo.observacao),
+  };
+
+  let erro = null;
+  if (!Number.isFinite(Number(corpo.valor ?? 0)) || dados.valor < 0 || (!permitirZero && dados.valor === 0)) {
+    erro = "Informe um valor de pagamento maior que zero.";
+  } else if (dados.valor > saldo) {
+    const maximo = `R$ ${saldo.toFixed(2).replace(".", ",")}`;
+    erro = permitirZero
+      ? `O valor recebido não pode passar de ${maximo} (total da venda + conta em aberto do cliente).`
+      : `O valor passa do saldo em aberto (${maximo}).`;
+  } else if (dados.valor > 0 && !FORMAS_PAGAMENTO.has(dados.forma)) {
+    erro = "Selecione a forma de pagamento.";
+  } else if (dados.observacao && dados.observacao.length > 255) {
+    erro = "A observação passou do limite de 255 caracteres.";
+  }
+
+  return erro ? { erro } : { dados };
+}
+
 /**
  * Valida o corpo de POST/PUT /produtos e devolve os dados prontos para o banco.
  * @returns {{ erro: string } | { dados: object }}

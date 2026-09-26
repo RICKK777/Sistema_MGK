@@ -1015,7 +1015,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .purchase-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 0.75rem;
   padding: 1rem 1.25rem;
 }
@@ -1550,4 +1550,128 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--mgk-white);
   background: var(--mgk-danger);
   border-color: var(--mgk-danger);
+}
+
+/* --------------------------------------------------------------------------
+   Pagamentos (venda paga em partes)
+   -------------------------------------------------------------------------- */
+.payment-box {
+  padding-top: 1.25rem;
+  border-top: 1px dashed var(--mgk-gray-300);
+}
+
+.payment-toggle .btn {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.payment-toggle .btn-check:checked + .btn {
+  color: var(--mgk-black);
+  background: var(--mgk-yellow);
+  border-color: var(--mgk-yellow);
+}
+
+.sale-totals .sale-totals-open.has-open dt,
+.sale-totals .sale-totals-open.has-open dd {
+  color: var(--mgk-danger);
+}
+
+.sale-totals .sale-totals-open.has-open dd {
+  font-weight: 800;
+}
+
+.payment-due {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--mgk-danger);
+  white-space: nowrap;
+}
+
+.purchase-stat.is-due {
+  border-left-color: var(--mgk-danger);
+}
+
+.purchase-stat.is-due .purchase-stat-value {
+  color: var(--mgk-danger);
+}
+
+.modal-body .payment-totals {
+  margin: 0 0 1rem auto;
+}
+
+.payment-form {
+  margin-top: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--mgk-gray-200);
+  border-left: 3px solid var(--mgk-yellow);
+  border-radius: var(--mgk-radius-sm);
+  background: var(--mgk-gray-100);
+}
+
+.payment-form-title {
+  margin-bottom: 0.875rem;
+  font-weight: 700;
+  color: var(--mgk-black);
+}
+
+.payment-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.payment-paid {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--mgk-radius-sm);
+  background: #e8f6ee;
+  color: var(--mgk-success);
+  font-weight: 600;
+}
+
+@media (max-width: 575.98px) {
+  .payment-form-actions .btn {
+    width: 100%;
+  }
+}
+
+/* Conta anterior do cliente, na tela de venda */
+.payment-previous {
+  display: flex;
+  gap: 0.625rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid #f3c7c7;
+  border-radius: var(--mgk-radius-sm);
+  background: #fdf1f1;
+  font-size: 0.8125rem;
+  color: var(--mgk-graphite);
+}
+
+.payment-previous > .bi {
+  margin-top: 0.125rem;
+  color: var(--mgk-danger);
+}
+
+.payment-previous strong {
+  color: var(--mgk-danger);
+}
+
+.payment-previous .btn-link {
+  padding: 0;
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--mgk-black);
+}
+
+.sale-totals .sale-totals-credit dt,
+.sale-totals .sale-totals-credit dd {
+  color: var(--mgk-success);
 }

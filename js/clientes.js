@@ -131,6 +131,21 @@
   const statusVenda = (status) =>
     `<span class="status-badge ${CLASSE_STATUS_VENDA[status] || "status-ativo"}">${vendas.STATUS[status] || vendas.STATUS.concluido}</span>`;
 
+  const CLASSE_SITUACAO_PAGAMENTO = {
+    pago: "status-ativo",
+    parcial: "status-andamento",
+    pendente: "status-cancelado",
+  };
+
+  /** Situação do pagamento (Pago / Pago em parte / Não pago) e, se houver, quanto falta. */
+  const situacaoPagamento = (venda, { comSaldo = true } = {}) => {
+    const { saldo, situacao } = vendas.pagamento(venda);
+    if (situacao === "cancelado") return '<span class="text-secondary">—</span>';
+    return `
+      <span class="status-badge ${CLASSE_SITUACAO_PAGAMENTO[situacao]}">${vendas.SITUACAO_PAGAMENTO[situacao]}</span>
+      ${comSaldo && saldo > 0 ? `<div class="payment-due">Falta ${format.moeda(saldo)}</div>` : ""}`;
+  };
+
   const produtosResumo = (venda) =>
     venda.produtos.map((p) => `${p.nome} (${p.quantidade}x)`).join(", ");
 
@@ -145,6 +160,10 @@
         <div class="purchase-stat">
           <div class="detail-label">Total gasto</div>
           <div class="purchase-stat-value">${format.moeda(r.totalGasto)}</div>
+        </div>
+        <div class="purchase-stat${r.emAberto > 0 ? " is-due" : ""}">
+          <div class="detail-label">Em aberto</div>
+          <div class="purchase-stat-value">${format.moeda(r.emAberto)}</div>
         </div>
         <div class="purchase-stat">
           <div class="detail-label">Última compra</div>
@@ -166,6 +185,7 @@
                 <th scope="col">Produtos</th>
                 <th scope="col" class="text-end">Valor total</th>
                 <th scope="col">Status</th>
+                <th scope="col">Pagamento</th>
                 <th scope="col"><span class="visually-hidden">Detalhes</span></th>
               </tr>
             </thead>
@@ -178,12 +198,13 @@
                   <td class="purchase-products">${escapeHtml(produtosResumo(v))}</td>
                   <td class="text-mono text-end">${format.moeda(v.total)}</td>
                   <td>${statusVenda(v.status)}</td>
+                  <td>${situacaoPagamento(v)}</td>
                   <td class="text-end"><i class="bi bi-chevron-right purchase-row-icon"></i></td>
                 </tr>`).join("")}
             </tbody>
           </table>
         </div>
-        <div class="purchase-note">Clique em uma compra para ver os detalhes. Pedidos cancelados não são considerados no resumo.</div>`
+        <div class="purchase-note">Clique em uma compra para ver os detalhes e registrar pagamentos. Pedidos cancelados não são considerados no resumo.</div>`
       : `
         <div class="empty-state py-4">
           <div class="empty-state-icon"><i class="bi bi-bag"></i></div>
@@ -285,21 +306,117 @@
      A ficha do cliente é escondida enquanto os detalhes estão abertos e volta
      pelo botão "Voltar para a ficha" (o Bootstrap não empilha modais).
      ------------------------------------------------------------------------ */
-  const abrirVenda = async (vendaId) => {
-    let v;
-    let c;
-    try {
-      v = await vendas.obter(vendaId);
-      if (v) c = await clientes.obter(v.clienteId);
-    } catch (err) {
-      ui.toast(err.message || "Não foi possível abrir a venda.", "error");
-      return;
-    }
-    if (!v) {
-      ui.toast("Venda não encontrada.", "error");
-      return;
-    }
+  let vendaAberta = null; // { venda, cliente } exibidos no modal de detalhes
+  let fichaDesatualizada = false; // um pagamento foi registrado: a ficha precisa ser recarregada
 
+  /** "AAAA-MM-DD" no fuso do navegador (valor do input type=date). */
+  const diaLocal = (data) => {
+    const d = new Date(data);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+
+  /**
+   * Converte o dia escolhido no formulário em data/hora ISO. Hoje = agora; outro dia = meio-dia.
+   * Qualquer dia até hoje é aceito, inclusive antes da venda (lançamento de pagamentos antigos).
+   */
+  const dataDoPagamento = (dia) => {
+    if (dia === diaLocal(new Date())) return new Date().toISOString();
+    return new Date(`${dia}T12:00:00`).toISOString();
+  };
+
+  const formaPagamento = (forma) => vendas.FORMAS_PAGAMENTO[forma] || "Não informada";
+
+  const secaoPagamentos = (v) => {
+    const { pago, saldo, situacao } = vendas.pagamento(v);
+    const pagamentos = [...(v.pagamentos || [])].sort((a, b) => a.data.localeCompare(b.data));
+
+    const lista = pagamentos.length
+      ? `
+        <div class="table-responsive sale-detail-table">
+          <table class="table table-mgk align-middle">
+            <thead>
+              <tr>
+                <th scope="col">Data</th>
+                <th scope="col">Forma</th>
+                <th scope="col">Observação</th>
+                <th scope="col" class="text-end">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pagamentos.map((p) => `
+                <tr>
+                  <td class="text-mono">${format.data(p.data)}</td>
+                  <td>${escapeHtml(formaPagamento(p.forma))}</td>
+                  <td class="text-secondary">${escapeHtml(p.observacao || "—")}</td>
+                  <td class="text-mono text-end fw-semibold">${format.moeda(p.valor)}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`
+      : '<p class="text-secondary mb-3">Nenhum pagamento registrado ainda.</p>';
+
+    const opcoesForma = Object.entries(vendas.FORMAS_PAGAMENTO)
+      .map(([valor, nome]) => `<option value="${valor}">${escapeHtml(nome)}</option>`).join("");
+
+    const formulario = saldo > 0
+      ? `
+        <form class="payment-form" id="formPagamento" novalidate autocomplete="off">
+          <div class="payment-form-title"><i class="bi bi-cash-coin"></i> Registrar pagamento</div>
+          <div class="row g-3">
+            <div class="col-sm-4">
+              <label for="pagValor" class="form-label">Valor<span class="req">*</span></label>
+              <div class="input-group has-validation">
+                <span class="input-group-text">R$</span>
+                <input type="text" class="form-control text-mono text-end" id="pagValor" inputmode="numeric"
+                       value="${format.moedaInput(Math.round(saldo * 100))}">
+                <div class="invalid-feedback" id="pagValorFeedback">Informe um valor.</div>
+              </div>
+            </div>
+            <div class="col-sm-4">
+              <label for="pagForma" class="form-label">Forma<span class="req">*</span></label>
+              <select class="form-select" id="pagForma">
+                <option value="">Selecione</option>
+                ${opcoesForma}
+              </select>
+              <div class="invalid-feedback">Selecione a forma.</div>
+            </div>
+            <div class="col-sm-4">
+              <label for="pagData" class="form-label">Data<span class="req">*</span></label>
+              <input type="date" class="form-control text-mono" id="pagData"
+                     value="${diaLocal(new Date())}" max="${diaLocal(new Date())}">
+              <div class="invalid-feedback">A data não pode ser no futuro.</div>
+            </div>
+            <div class="col-12">
+              <label for="pagObs" class="form-label">Observação</label>
+              <input type="text" class="form-control" id="pagObs" maxlength="255" placeholder="Ex.: depósito na conta, 2ª parcela...">
+            </div>
+          </div>
+          <div class="payment-form-actions">
+            <span class="text-secondary small">O valor já vem preenchido com o saldo; altere se o cliente pagou só uma parte.</span>
+            <button type="submit" class="btn btn-mgk" id="btnRegistrarPagamento">
+              <i class="bi bi-check-lg"></i> Registrar pagamento
+            </button>
+          </div>
+        </form>`
+      : situacao === "pago"
+        ? '<div class="payment-paid"><i class="bi bi-check-circle-fill"></i> Venda quitada.</div>'
+        : "";
+
+    return `
+      <div class="detail-section">
+        <div class="detail-section-title">Pagamentos</div>
+        <dl class="sale-totals payment-totals">
+          <div><dt>Total da venda</dt><dd>${format.moeda(v.total)}</dd></div>
+          <div><dt>Pago</dt><dd>${format.moeda(pago)}</dd></div>
+          <div class="sale-totals-open${saldo > 0 ? " has-open" : ""}"><dt>Em aberto</dt><dd>${format.moeda(saldo)}</dd></div>
+        </dl>
+        ${lista}
+        ${formulario}
+      </div>`;
+  };
+
+  const renderVenda = (v, c) => {
+    vendaAberta = { venda: v, cliente: c };
     document.getElementById("modalVendaTitulo").textContent = `Pedido #${v.numero}`;
     document.getElementById("modalVendaData").textContent = new Date(v.data).toLocaleString("pt-BR", {
       dateStyle: "short",
@@ -326,11 +443,15 @@
         <div class="row g-3">
           ${campo("Número do pedido", `#${v.numero}`, "col-6 col-sm-4")}
           ${campo("Data", format.data(v.data), "col-6 col-sm-4")}
-          <div class="col-12 col-sm-4">
+          <div class="col-6 col-sm-4">
             <div class="detail-label">Status</div>
             <div class="detail-value">${statusVenda(v.status)}</div>
           </div>
-          ${campo("Cliente", c ? c.nome : "Cliente removido", "col-sm-8")}
+          <div class="col-6 col-sm-4">
+            <div class="detail-label">Pagamento</div>
+            <div class="detail-value">${situacaoPagamento(v, { comSaldo: false })}</div>
+          </div>
+          ${campo("Cliente", c ? c.nome : "Cliente removido", "col-sm-4")}
           ${campo(c ? format.tipoDocumento(c.documento) : "CPF/CNPJ", c ? format.documento(c.documento) : "", "col-sm-4")}
         </div>
       </div>
@@ -357,14 +478,103 @@
           <div><dt>Desconto</dt><dd>${v.desconto ? `− ${format.moeda(v.desconto)}` : format.moeda(0)}</dd></div>
           <div class="sale-totals-total"><dt>Total</dt><dd>${format.moeda(v.total)}</dd></div>
         </dl>
-      </div>`;
+      </div>
+      ${secaoPagamentos(v)}`;
+  };
 
+  const abrirVenda = async (vendaId) => {
+    let v;
+    let c;
+    try {
+      v = await vendas.obter(vendaId);
+      if (v) c = await clientes.obter(v.clienteId);
+    } catch (err) {
+      ui.toast(err.message || "Não foi possível abrir a venda.", "error");
+      return;
+    }
+    if (!v) {
+      ui.toast("Venda não encontrada.", "error");
+      return;
+    }
+
+    fichaDesatualizada = false;
+    renderVenda(v, c);
     el.modal.addEventListener("hidden.bs.modal", () => modalVenda.show(), { once: true });
     modal.hide();
   };
 
+  /* ------------------------------------------------------------------------
+     Registrar pagamento (cliente pagou mais uma parte da venda)
+     ------------------------------------------------------------------------ */
+  el.modalVenda.addEventListener("input", (event) => {
+    if (event.target.id === "pagValor") event.target.value = format.moedaInput(event.target.value);
+    if (event.target.matches(".is-invalid")) event.target.classList.remove("is-invalid");
+  });
+
+  el.modalVenda.addEventListener("change", (event) => {
+    if (event.target.matches(".is-invalid")) event.target.classList.remove("is-invalid");
+  });
+
+  el.modalVenda.addEventListener("submit", async (event) => {
+    if (event.target.id !== "formPagamento") return;
+    event.preventDefault();
+    const { venda, cliente } = vendaAberta;
+    const btn = document.getElementById("btnRegistrarPagamento");
+    if (btn.disabled) return;
+
+    const campoValor = document.getElementById("pagValor");
+    const campoForma = document.getElementById("pagForma");
+    const campoData = document.getElementById("pagData");
+    const valor = format.parseMoeda(campoValor.value);
+    const { saldo } = vendas.pagamento(venda);
+    const hoje = diaLocal(new Date());
+
+    const invalidos = [];
+    if (!(valor > 0) || valor > saldo) {
+      document.getElementById("pagValorFeedback").textContent =
+        valor > saldo ? `Máximo: ${format.moeda(saldo)} (saldo em aberto).` : "Informe um valor.";
+      invalidos.push(campoValor);
+    }
+    if (!campoForma.value) invalidos.push(campoForma);
+    if (!campoData.value || campoData.value > hoje) invalidos.push(campoData);
+    invalidos.forEach((campo) => campo.classList.add("is-invalid"));
+    if (invalidos.length) {
+      invalidos[0].focus();
+      ui.toast("Revise os dados do pagamento.", "error");
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      const atualizada = await vendas.registrarPagamento(venda.id, {
+        valor,
+        forma: campoForma.value,
+        data: dataDoPagamento(campoData.value),
+        observacao: document.getElementById("pagObs").value,
+      });
+      fichaDesatualizada = true;
+      renderVenda(atualizada, cliente);
+      const restante = vendas.pagamento(atualizada).saldo;
+      ui.toast(
+        restante > 0
+          ? `Pagamento de ${format.moeda(valor)} registrado. Ainda falta ${format.moeda(restante)}.`
+          : `Pagamento de ${format.moeda(valor)} registrado. Venda quitada!`
+      );
+    } catch (err) {
+      btn.disabled = false;
+      ui.toast(err.message || "Não foi possível registrar o pagamento.", "error");
+    }
+  });
+
   document.getElementById("btnVoltarFicha").addEventListener("click", () => {
-    el.modalVenda.addEventListener("hidden.bs.modal", () => modal.show(), { once: true });
+    el.modalVenda.addEventListener("hidden.bs.modal", () => {
+      // Depois de um pagamento, recarrega a ficha para o resumo e o histórico mostrarem o novo saldo
+      if (fichaDesatualizada && vendaAberta) {
+        abrirVisualizacao(vendaAberta.venda.clienteId, { aberto: true, destaque: vendaAberta.venda.id });
+      } else {
+        modal.show();
+      }
+    }, { once: true });
     modalVenda.hide();
   });
 

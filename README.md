@@ -70,7 +70,16 @@ sistema-mgk/
 - Cliente escolhido por busca de nome ou CPF/CNPJ (teclado: ↑ ↓ Enter Esc)
 - Vários produtos por venda; o preço padrão é preenchido automaticamente e pode ser alterado **só para esta venda**
 - Subtotais, desconto e total recalculados a cada alteração
-- Ao finalizar: valida cliente, produtos, quantidades, preços e desconto; registra a venda e abre a ficha do cliente com a nova compra destacada no histórico
+- **Pagamento**: "Pago integral" ou "Outro valor". Com outro valor, informa-se quanto o cliente pagou agora:
+  - **menos que o total** (ou nada): o restante fica **em aberto**;
+  - **mais que o total**: se o cliente tem conta anterior em aberto, a diferença **abate essa conta**, do pedido mais antigo para o mais recente (limite: total da venda + conta anterior). A tela avisa quanto o cliente deve e tem o atalho "Receber tudo agora"
+- Ao finalizar: valida cliente, produtos, quantidades, preços, desconto e pagamento; registra a venda e abre a ficha do cliente com a nova compra destacada no histórico
+
+### Pagamentos em partes
+- O cliente pode pagar a venda aos poucos, em dias diferentes (ex.: parte no pedido, o resto depositado depois)
+- Ficha do cliente → histórico → clique na venda → seção **Pagamentos**: lista do que já foi pago (data, forma, observação), total pago, saldo em aberto e o formulário **Registrar pagamento** (o valor já vem com o saldo; a data pode ser de um dia anterior)
+- O histórico mostra a situação de cada pedido (**Pago**, **Pago em parte** com quanto falta, **Não pago**) e o resumo da ficha mostra o total **Em aberto** do cliente
+- Não deixa pagar mais que o saldo nem registrar pagamento em venda cancelada
 
 ### Geral
 - Sidebar fixa no desktop e recolhível (menu hambúrguer) no tablet/celular

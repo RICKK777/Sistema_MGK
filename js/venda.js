@@ -38,6 +38,9 @@
   let proximoUid = 1;
 
   let catalogo = []; // carregado em iniciar()
+
+  // Compras anteriores do cliente ainda não pagas (MGK.vendas.contaEmAberto), carregadas ao escolher o cliente
+  let contaAnterior = { saldo: 0, vendas: [] };
   const produtoPorId = (id) => catalogo.find((p) => mesmoId(p.id, id));
 
   const quantidadeValida = (q) => Number.isInteger(q) && q >= 1 && q <= QTD_MAX;
@@ -115,10 +118,12 @@
     el.busca.classList.remove("is-invalid");
     el.clienteFeedback.classList.remove("d-block");
     abrirLista(false);
+    carregarContaAnterior(c);
   };
 
   const trocarCliente = () => {
     venda.cliente = null;
+    carregarContaAnterior(null);
     el.selecionado.hidden = true;
     el.buscaGrupo.hidden = false;
     el.busca.value = "";
@@ -333,7 +338,7 @@
     $("resumoSubtotal").textContent = format.moeda(calculo.subtotal);
     $("resumoDesconto").textContent = calculo.desconto ? `− ${format.moeda(calculo.desconto)}` : format.moeda(0);
     $("resumoTotal").textContent = format.moeda(calculo.total);
-    return { ...calculo, descontoInvalido };
+    return { ...calculo, descontoInvalido, pagamento: atualizarPagamento(calculo.total) };
   }
 
   el.desconto.addEventListener("input", () => {
@@ -342,7 +347,132 @@
   });
 
   /* ------------------------------------------------------------------------
-     4. Finalizar venda
+     4. Pagamento
+     "Pago integral": o cliente paga o total agora.
+     "Outro valor":
+       - menos que o total (ou nada): o restante fica em aberto e é registrado depois, na
+         ficha do cliente → detalhes da venda → Registrar pagamento;
+       - mais que o total: a diferença abate a conta anterior em aberto do cliente, começando
+         pelo pedido mais antigo (limite: total desta venda + conta anterior).
+     ------------------------------------------------------------------------ */
+  const pag = {
+    integral: $("pagIntegral"),
+    parcial: $("pagParcial"),
+    valor: $("valorPago"),
+    grupoValor: $("grupoValorPago"),
+    forma: $("formaPagamento"),
+    grupoForma: $("grupoFormaPagamento"),
+  };
+
+  pag.forma.insertAdjacentHTML(
+    "beforeend",
+    Object.entries(vendas.FORMAS_PAGAMENTO).map(([valor, nome]) => `<option value="${valor}">${escapeHtml(nome)}</option>`).join("")
+  );
+
+  const centavosPositivos = (valor) => Math.max(Math.round(valor * 100) / 100, 0);
+
+  const MAX_PEDIDOS_LISTADOS = 5;
+
+  /** Mostra o aviso de conta anterior em aberto (e o atalho "Receber tudo"). */
+  const renderContaAnterior = (maximo) => {
+    const { saldo, vendas: abertas } = contaAnterior;
+    $("contaAnterior").hidden = saldo === 0;
+    if (saldo === 0) return;
+
+    const numeros = abertas.slice(0, MAX_PEDIDOS_LISTADOS).map((a) => `#${a.venda.numero}`).join(", ");
+    const resto = abertas.length > MAX_PEDIDOS_LISTADOS ? ` e mais ${abertas.length - MAX_PEDIDOS_LISTADOS}` : "";
+    $("contaAnteriorValor").textContent = format.moeda(saldo);
+    $("contaAnteriorPedidos").textContent =
+      `${abertas.length} ${abertas.length === 1 ? "pedido" : "pedidos"}: ${numeros}${resto}. ` +
+      "Pagando mais que o total desta venda, a diferença abate essa conta.";
+    $("btnReceberTudo").textContent = `Receber tudo agora (${format.moeda(maximo)})`;
+  };
+
+  /** Mostra os campos conforme a opção e calcula quanto é pago agora, quanto abate a conta anterior e quanto fica em aberto. */
+  function atualizarPagamento(total) {
+    const integral = pag.integral.checked;
+    const conta = contaAnterior.saldo;
+    const maximo = centavosPositivos(total + conta);
+    const pago = integral ? total : format.parseMoeda(pag.valor.value);
+    const excedeu = !integral && pago > maximo;
+    const { naVenda, abatimentos } = vendas.distribuirPagamento(excedeu ? 0 : pago, total, contaAnterior);
+    const abate = centavosPositivos(abatimentos.reduce((acc, a) => acc + a.valor, 0));
+    const aberto = centavosPositivos(total - naVenda);
+    const contaRestante = centavosPositivos(conta - abate);
+
+    renderContaAnterior(maximo);
+    pag.grupoValor.hidden = integral;
+    pag.grupoForma.hidden = !integral && !(pago > 0); // nada pago agora → sem forma de pagamento
+    pag.valor.classList.toggle("is-invalid", excedeu);
+    $("valorPagoFeedback").textContent = conta > 0
+      ? `Máximo: ${format.moeda(maximo)} (esta venda + conta anterior).`
+      : "O valor pago não pode ser maior que o total (o cliente não tem conta anterior em aberto).";
+    $("valorPagoAjuda").textContent = conta > 0
+      ? "Menos que o total: o resto fica em aberto. Mais que o total: a diferença abate a conta anterior, do pedido mais antigo para o mais recente."
+      : "Deixe em branco se o cliente vai pagar tudo depois.";
+
+    $("resumoPago").textContent = format.moeda(pago);
+    $("linhaAbate").hidden = abate === 0;
+    $("resumoAbate").textContent = format.moeda(abate);
+    $("resumoAberto").textContent = format.moeda(aberto);
+    $("linhaAberto").classList.toggle("has-open", aberto > 0);
+    $("linhaContaRestante").hidden = conta === 0;
+    $("resumoContaRestante").textContent = format.moeda(contaRestante);
+    $("linhaContaRestante").classList.toggle("has-open", contaRestante > 0);
+    return { pago, excedeu, aberto, abate };
+  }
+
+  let cargaConta = 0; // descarta respostas antigas ao trocar de cliente rapidamente
+
+  /** Busca as compras anteriores do cliente e calcula a conta em aberto. */
+  async function carregarContaAnterior(cliente) {
+    const minhaCarga = ++cargaConta;
+    contaAnterior = { saldo: 0, vendas: [] };
+    atualizarResumo();
+    if (!cliente) return;
+
+    try {
+      const compras = await vendas.porCliente(cliente.id);
+      if (minhaCarga !== cargaConta) return;
+      contaAnterior = vendas.contaEmAberto(compras);
+      atualizarResumo();
+    } catch (err) {
+      // Sem a conta anterior, a venda continua funcionando; o servidor valida o limite ao finalizar
+      console.warn("[MGK] Não foi possível carregar a conta em aberto do cliente.", err);
+    }
+  }
+
+  $("btnReceberTudo").addEventListener("click", () => {
+    const { total } = calcularVenda();
+    pag.parcial.checked = true;
+    pag.valor.value = format.moedaInput(Math.round((total + contaAnterior.saldo) * 100));
+    atualizarResumo();
+    (pag.forma.value ? pag.valor : pag.forma).focus();
+  });
+
+  [pag.integral, pag.parcial].forEach((radio) =>
+    radio.addEventListener("change", () => {
+      atualizarResumo();
+      if (pag.parcial.checked) pag.valor.focus();
+    })
+  );
+
+  pag.valor.addEventListener("input", () => {
+    pag.valor.value = format.moedaInput(pag.valor.value);
+    atualizarResumo();
+  });
+
+  pag.forma.addEventListener("change", () => pag.forma.classList.remove("is-invalid"));
+
+  const limparPagamento = () => {
+    pag.integral.checked = true;
+    pag.valor.value = "";
+    pag.forma.value = "";
+    pag.forma.classList.remove("is-invalid");
+  };
+
+  /* ------------------------------------------------------------------------
+     5. Finalizar venda
      ------------------------------------------------------------------------ */
   const validarVenda = () => {
     if (!venda.cliente) {
@@ -365,9 +495,21 @@
         : "Informe um preço unitário maior que zero.";
     }
 
-    if (atualizarResumo().descontoInvalido) {
+    const resumo = atualizarResumo();
+    if (resumo.descontoInvalido) {
       el.desconto.focus();
       return "O desconto não pode ser maior que o subtotal da venda.";
+    }
+    if (resumo.pagamento.excedeu) {
+      pag.valor.focus();
+      return contaAnterior.saldo > 0
+        ? `O valor pago não pode passar de ${format.moeda(resumo.total + contaAnterior.saldo)} (esta venda + conta anterior).`
+        : "O valor pago não pode ser maior que o total da venda.";
+    }
+    if (resumo.pagamento.pago > 0 && !pag.forma.value) {
+      pag.forma.classList.add("is-invalid");
+      pag.forma.focus();
+      return "Selecione a forma de pagamento.";
     }
     return null;
   };
@@ -385,12 +527,21 @@
 
     btn.disabled = true;
     try {
+      const { pago } = atualizarResumo().pagamento;
       const registrada = await vendas.registrar({
         clienteId: venda.cliente.id,
         itens: venda.itens.map(({ produtoId, quantidade, precoUnitario }) => ({ produtoId, quantidade, precoUnitario })),
         desconto: format.parseMoeda(el.desconto.value),
+        pagamento: pago > 0 ? { valor: pago, forma: pag.forma.value } : { valor: 0 },
       });
-      ui.flash(`Venda #${registrada.numero} registrada para ${venda.cliente.nome} (${format.moeda(registrada.total)}).`);
+      const { saldo } = vendas.pagamento(registrada);
+      const abatimentos = registrada.abatimentos || [];
+      const abatido = abatimentos.reduce((acc, a) => acc + Number(a.valor), 0);
+      ui.flash(
+        `Venda #${registrada.numero} registrada para ${venda.cliente.nome} (${format.moeda(registrada.total)}).` +
+          (saldo > 0 ? ` Em aberto: ${format.moeda(saldo)}.` : "") +
+          (abatido > 0 ? ` ${format.moeda(abatido)} abatido da conta anterior (${abatimentos.map((a) => `#${a.numero}`).join(", ")}).` : "")
+      );
       // Abre a ficha do cliente com o histórico aberto e a nova venda destacada
       location.href = `clientes.html?ver=${encodeURIComponent(registrada.clienteId)}&venda=${encodeURIComponent(registrada.id)}`;
     } catch (err) {
@@ -411,12 +562,13 @@
     venda.itens = [];
     el.desconto.value = "";
     el.desconto.classList.remove("is-invalid");
+    limparPagamento();
     renderItens();
     trocarCliente();
   });
 
   /* ------------------------------------------------------------------------
-     5. Catálogo de produtos
+     6. Catálogo de produtos
      Recarregado quando um produto é cadastrado/alterado em outra aba e ao voltar para esta aba,
      para que produtos novos apareçam sem precisar recarregar a página.
      ------------------------------------------------------------------------ */

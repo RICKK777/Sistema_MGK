@@ -68,6 +68,7 @@ erDiagram
     clientes ||--o{ vendas : "faz"
     vendas   ||--|{ venda_itens : "contém"
     produtos ||--o{ venda_itens : "aparece em"
+    vendas   ||--o{ pagamentos : "recebe"
 
     clientes {
         INT id PK
@@ -114,13 +115,22 @@ erDiagram
         DECIMAL preco_unitario "preço praticado"
         DECIMAL subtotal "quantidade x preco_unitario"
     }
+    pagamentos {
+        INT id PK
+        INT venda_id FK
+        DATETIME data "quando o cliente pagou"
+        DECIMAL valor
+        ENUM forma "dinheiro | pix | debito | credito | transferencia | boleto | outro"
+        VARCHAR observacao
+    }
 ```
 
-**Por que 4 tabelas?**
+**Por que 5 tabelas?**
 
 - Um **cliente** tem várias **vendas** (1:N) → `vendas.cliente_id`.
 - Uma **venda** tem vários produtos, e o mesmo **produto** aparece em várias vendas (N:N). Relação N:N sempre vira uma tabela no meio: `venda_itens`.
 - `venda_itens` guarda uma **cópia** do nome e do preço padrão do produto. Se amanhã o Shampoo passar de R$ 50 para R$ 60, as vendas antigas continuam mostrando R$ 50. É a mesma regra que o front-end já segue (`precoPadrao` × `precoUnitario`).
+- Uma **venda** pode ser paga **em partes**, em dias diferentes (1:N) → `pagamentos.venda_id`. O saldo em aberto não é gravado: é sempre calculado como `total − SUM(pagamentos.valor)`, então nunca fica desatualizado.
 
 ---
 
@@ -177,6 +187,7 @@ Convenção: o **MySQL usa `snake_case`** (`criado_em`) e o **JSON da API usa `c
 | `total` | `total` | `DECIMAL(10,2)` **gerado** | `subtotal - desconto`, calculado pelo próprio MySQL |
 | `status` | `status` | `ENUM('concluido','andamento','cancelado')` | Vendas canceladas não entram no resumo do cliente |
 | — | `produtos` | *(array)* | Itens da venda, vindos de `venda_itens` (ver abaixo) |
+| — | `pagamentos` | *(array)* | Pagamentos recebidos, vindos de `pagamentos` (ver 4.5) |
 
 ### 4.4 `venda_itens`
 
@@ -190,6 +201,28 @@ Convenção: o **MySQL usa `snake_case`** (`criado_em`) e o **JSON da API usa `c
 | `preco_padrao` | `precoPadrao` | `DECIMAL(10,2)` | Cópia do preço de tabela na data da venda |
 | `preco_unitario` | `precoUnitario` | `DECIMAL(10,2)` | Preço **praticado** (pode ser diferente do padrão) |
 | `subtotal` | `subtotal` | `DECIMAL(10,2)` **gerado** | `quantidade * preco_unitario` |
+
+### 4.5 `pagamentos`
+
+O cliente nem sempre paga tudo no pedido: pode pagar uma parte na hora (ou nada) e depositar o restante depois, em quantas vezes quiser. Cada valor recebido vira uma linha aqui.
+
+| Coluna | Campo em `venda.pagamentos[]` | Tipo | Observação |
+| --- | --- | --- | --- |
+| `id` | `id` | `INT UNSIGNED AUTO_INCREMENT` | |
+| `venda_id` | *(não enviado)* | `INT UNSIGNED` → `vendas.id` | Apagar a venda apaga os pagamentos (`ON DELETE CASCADE`) |
+| `data` | `data` | `DATETIME` | Quando o cliente pagou (pode ser um dia anterior ao registro) |
+| `valor` | `valor` | `DECIMAL(10,2)` | Maior que zero. A soma nunca passa do total da venda |
+| `forma` | `forma` | `ENUM('dinheiro','pix','debito','credito','transferencia','boleto','outro')` | |
+| `observacao` | `observacao` | `VARCHAR(255)` | Opcional. Ex.: "depósito na conta", "2ª parcela" |
+| `criado_em` | *(não enviado)* | `DATETIME` | Quando o pagamento foi lançado no sistema |
+
+Situação do pagamento (calculada no site, em `MGK.vendas.pagamento()`):
+
+| Situação | Regra |
+| --- | --- |
+| Pago | `SUM(valor) >= total` |
+| Pago em parte | `0 < SUM(valor) < total` |
+| Não pago | nenhum pagamento |
 
 ---
 
@@ -292,7 +325,34 @@ CREATE TABLE venda_itens (
   CONSTRAINT ck_itens_quantidade CHECK (quantidade BETWEEN 1 AND 999),
   CONSTRAINT ck_itens_preco      CHECK (preco_unitario > 0)
 ) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------------------------
+-- Pagamentos da venda (o cliente pode pagar em partes, em dias diferentes)
+-- ----------------------------------------------------------------------------
+CREATE TABLE pagamentos (
+  id          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  venda_id    INT UNSIGNED  NOT NULL,
+  data        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  valor       DECIMAL(10,2) NOT NULL,
+  forma       ENUM('dinheiro','pix','debito','credito','transferencia','boleto','outro') NOT NULL,
+  observacao  VARCHAR(255)  NULL,
+  criado_em   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  KEY idx_pag_venda (venda_id, data),
+  CONSTRAINT fk_pag_venda FOREIGN KEY (venda_id) REFERENCES vendas (id) ON DELETE CASCADE,
+  CONSTRAINT ck_pag_valor CHECK (valor > 0)
+) ENGINE=InnoDB;
 ```
+
+> **Banco já criado antes dos pagamentos?** Rode só o `CREATE TABLE pagamentos` acima e depois este comando, que considera quitadas as vendas antigas (antes elas não tinham controle de pagamento):
+>
+> ```sql
+> INSERT INTO pagamentos (venda_id, data, valor, forma, observacao)
+> SELECT id, data, total, 'outro', 'Registrado antes do controle de pagamentos'
+>   FROM vendas
+>  WHERE status <> 'cancelado' AND total > 0;
+> ```
 
 ### Usuário do banco para a API
 
@@ -351,6 +411,7 @@ Todas as rotas ficam abaixo de `apiUrl` (ex.: `http://localhost:3000/api`). Requ
 | `GET` | `/vendas?clienteId=<id>` | Histórico e resumo da ficha | `200` → `Venda[]` do cliente, mais recente primeiro |
 | `GET` | `/vendas/:id` | Detalhes da venda | `200` → `Venda` · `404` |
 | `POST` | `/vendas` | Finalizar venda | `201` → `Venda` completa |
+| `POST` | `/vendas/:id/pagamentos` | Registrar pagamento posterior (detalhes da venda) | `201` → `Venda` atualizada · `400` se passar do saldo |
 
 ### 7.2 Formato dos objetos
 
@@ -398,9 +459,15 @@ Todas as rotas ficam abaixo de `apiUrl` (ex.: `http://localhost:3000/api`). Requ
   "subtotal": 90.00,
   "desconto": 10.00,
   "total": 80.00,
-  "status": "concluido"
+  "status": "concluido",
+  "pagamentos": [
+    { "id": 7, "data": "2026-09-15T15:00:00.000Z", "valor": 50.00, "forma": "pix", "observacao": "Pago na venda" },
+    { "id": 9, "data": "2026-09-20T12:00:00.000Z", "valor": 10.00, "forma": "transferencia", "observacao": "Depósito" }
+  ]
 }
 ```
+
+Nesse exemplo o cliente pagou R$ 60 de R$ 80: faltam **R$ 20** (situação "Pago em parte").
 
 ### 7.3 O que o front-end envia
 
@@ -425,8 +492,23 @@ Todas as rotas ficam abaixo de `apiUrl` (ex.: `http://localhost:3000/api`). Requ
     { "produtoId": 1, "quantidade": 2, "precoUnitario": 45.00 },
     { "produtoId": 5, "quantidade": 1, "precoUnitario": 40.00 }
   ],
-  "desconto": 10.00
+  "desconto": 10.00,
+  "pagamento": { "valor": 50.00, "forma": "pix" }
 }
+```
+
+`pagamento` é o que o cliente pagou **na hora**. `{ "valor": 0 }` = vai pagar tudo depois; valor igual ao total = pago integral.
+
+O valor **pode passar do total** quando o cliente tem conta em aberto (compras anteriores não quitadas): a diferença abate essas vendas, da mais antiga para a mais recente, com a observação `Abatido na venda #000140`. O limite é `total da venda + conta em aberto`. A resposta traz, além da venda, o que foi abatido:
+
+```json
+"abatimentos": [{ "vendaId": 98, "numero": "000098", "valor": 30.00 }]
+```
+
+**`POST /vendas/:id/pagamentos`**: mais uma parte paga pelo cliente. `data` em ISO (opcional; sem ela, vale o momento atual).
+
+```json
+{ "valor": 10.00, "forma": "transferencia", "data": "2026-09-20T12:00:00.000Z", "observacao": "Depósito" }
 ```
 
 ### 7.4 Erros
@@ -469,7 +551,18 @@ Faça tudo dentro de **uma transação** (`START TRANSACTION` … `COMMIT`). Se 
 4. Calcular subtotal = Σ(quantidade × precoUnitario), com arredondamento em centavos, e conferir `0 ≤ desconto ≤ subtotal`.
 5. `INSERT INTO vendas (cliente_id, subtotal, desconto) ...` e pegar o `id` gerado.
 6. `INSERT INTO venda_itens (...)` para cada item, copiando `nome` e `preco_padrao` do produto.
-7. `COMMIT` e devolver a venda completa (mesmo formato do `GET /vendas/:id`), com status `201`.
+7. Buscar a conta em aberto do cliente (`SELECT ... FOR UPDATE` nas vendas dele não canceladas + soma dos pagamentos). Conferir `0 ≤ pagamento.valor ≤ total + conta em aberto` (e a `forma`, se o valor for maior que zero).
+   Gravar em `pagamentos`: até o `total` na venda nova; o que sobrar, nas vendas antigas com saldo, da mais antiga para a mais recente.
+8. `COMMIT` e devolver a venda completa (mesmo formato do `GET /vendas/:id`), com status `201`.
+
+### Pagamentos (`POST /vendas/:id/pagamentos`)
+
+Também em transação, travando a venda com `SELECT ... FOR UPDATE` (assim dois pagamentos lançados ao mesmo tempo não passam do total):
+
+1. Venda existe (senão `404`) e não está cancelada (senão `400`).
+2. Saldo = `total − SUM(pagamentos.valor)`. O valor precisa ser `> 0` e `≤ saldo` (senão `400`).
+3. `forma` válida; `data` não pode ser no futuro. **Pode** ser anterior à venda, para lançar pagamentos antigos (ex.: vindos da planilha do Excel).
+4. `INSERT INTO pagamentos (...)` e devolver a venda completa.
 
 ### Formato dos dados na resposta
 
@@ -511,7 +604,6 @@ O menu já mostra **Vendedores, Estoque, Pagamentos e Metas** como "Em breve". A
 erDiagram
     usuarios ||--o{ vendas : "registra"
     usuarios ||--o{ metas : "tem"
-    vendas   ||--o{ pagamentos : "recebe"
     produtos ||--o{ estoque_movimentacoes : "movimenta"
 ```
 
@@ -564,26 +656,18 @@ CREATE TABLE estoque_movimentacoes (
 
 No `POST /vendas`, dentro da mesma transação, grave uma movimentação de `saida` por item e subtraia de `produtos.estoque_atual`.
 
-### 9.3 `pagamentos` (Pagamentos)
+### 9.3 Pagamentos
 
-Uma venda pode ser paga em partes (ex.: metade no Pix, metade no cartão).
+Já implementado: veja a tabela `pagamentos` nas seções [4.5](#45-pagamentos) e [5](#5-script-sql-completo). Uma tela "Contas a receber" (menu Pagamentos) pode listar as vendas com saldo:
 
 ```sql
-CREATE TABLE pagamentos (
-  id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  venda_id    INT UNSIGNED NOT NULL,
-  forma       ENUM('dinheiro','pix','debito','credito','boleto') NOT NULL,
-  valor       DECIMAL(10,2) NOT NULL,
-  parcelas    TINYINT UNSIGNED NOT NULL DEFAULT 1,
-  status      ENUM('pendente','pago','estornado') NOT NULL DEFAULT 'pendente',
-  vencimento  DATE NULL,
-  pago_em     DATETIME NULL,
-  PRIMARY KEY (id),
-  KEY idx_pag_venda (venda_id),
-  KEY idx_pag_status_venc (status, vencimento),
-  CONSTRAINT fk_pag_venda FOREIGN KEY (venda_id) REFERENCES vendas (id) ON DELETE CASCADE,
-  CONSTRAINT ck_pag_valor CHECK (valor > 0)
-) ENGINE=InnoDB;
+SELECT v.id, v.cliente_id, v.total, v.total - COALESCE(SUM(p.valor), 0) AS saldo
+  FROM vendas v
+  LEFT JOIN pagamentos p ON p.venda_id = v.id
+ WHERE v.status <> 'cancelado'
+ GROUP BY v.id
+HAVING saldo > 0
+ ORDER BY v.data;
 ```
 
 ### 9.4 `metas` (Metas)

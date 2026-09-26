@@ -210,14 +210,15 @@ window.MGK_MOCK_PRODUTOS = [
 
 /**
  * VENDAS FICTÍCIAS — somente para demonstração.
- * Formato compacto: venda(numero, clienteId, data AAAA-MM-DD, [[produtoId, quantidade, precoUnitario], ...], desconto, status)
+ * Formato compacto: venda(numero, clienteId, data AAAA-MM-DD, [[produtoId, quantidade, precoUnitario], ...], desconto, status, pagamentos)
  * O precoUnitario é o preço praticado e pode ser diferente do precoPadrao do produto.
+ * pagamentos: [[data AAAA-MM-DD, valor, forma], ...]. Sem informar = pago integral no Pix, no dia da venda.
  */
 window.MGK_MOCK_VENDAS = (function () {
   const produtos = Object.fromEntries(window.MGK_MOCK_PRODUTOS.map((p) => [p.id, p]));
   const centavos = (v) => Math.round(v * 100) / 100;
 
-  const venda = (numero, clienteId, data, itens, desconto = 0, status = "concluido") => {
+  const venda = (numero, clienteId, data, itens, desconto = 0, status = "concluido", pagamentos) => {
     const lista = itens.map(([produtoId, quantidade, precoUnitario]) => ({
       produtoId,
       nome: produtos[produtoId].nome,
@@ -227,6 +228,8 @@ window.MGK_MOCK_VENDAS = (function () {
       subtotal: centavos(quantidade * precoUnitario),
     }));
     const subtotal = centavos(lista.reduce((acc, i) => acc + i.subtotal, 0));
+    const total = centavos(subtotal - desconto);
+    const pagos = pagamentos ?? (status === "cancelado" ? [] : [[data, total, "pix"]]);
     return {
       id: `v-${numero}`,
       numero,
@@ -235,14 +238,22 @@ window.MGK_MOCK_VENDAS = (function () {
       produtos: lista,
       subtotal,
       desconto,
-      total: centavos(subtotal - desconto),
+      total,
       status,
+      pagamentos: pagos.map(([dataPagamento, valor, forma], i) => ({
+        id: `pg-${numero}-${i + 1}`,
+        data: `${dataPagamento}T${dataPagamento === data ? "15:00" : "12:00"}:00.000Z`,
+        valor,
+        forma,
+        observacao: dataPagamento === data ? "Pago na venda" : "",
+      })),
     };
   };
 
   return [
     // Ana Fictícia Moreira
-    venda("000123", "c-0001", "2026-09-15", [["p-001", 2, 50], ["p-002", 1, 80], ["p-005", 2, 35]]),
+    venda("000123", "c-0001", "2026-09-15", [["p-001", 2, 50], ["p-002", 1, 80], ["p-005", 2, 35]], 0, "concluido",
+      [["2026-09-15", 100, "dinheiro"], ["2026-09-22", 50, "transferencia"]]),
     venda("000098", "c-0001", "2026-09-02", [["p-003", 2, 150], ["p-008", 1, 130]]),
     venda("000071", "c-0001", "2026-08-18", [["p-001", 2, 50], ["p-004", 1, 45]], 25),
     venda("000064", "c-0001", "2026-08-01", [["p-004", 2, 45], ["p-005", 2, 40]], 5),
@@ -255,11 +266,12 @@ window.MGK_MOCK_VENDAS = (function () {
     venda("000012", "c-0001", "2026-03-11", [["p-005", 2, 40]]),
     venda("000005", "c-0001", "2026-02-06", [["p-003", 3, 150]], 20),
     // Bruno Teste Carvalho
-    venda("000131", "c-0002", "2026-09-20", [["p-008", 2, 120], ["p-006", 1, 70]], 0, "andamento"),
+    venda("000131", "c-0002", "2026-09-20", [["p-008", 2, 120], ["p-006", 1, 70]], 0, "andamento", []),
     venda("000068", "c-0002", "2026-08-09", [["p-001", 2, 50], ["p-002", 2, 75]]),
     venda("000035", "c-0002", "2026-05-27", [["p-006", 1, 65], ["p-005", 1, 30]]),
     // Salão Exemplo Beleza Ltda
-    venda("000127", "c-0003", "2026-09-18", [["p-003", 3, 140], ["p-007", 2, 210], ["p-001", 2, 50]], 50),
+    venda("000127", "c-0003", "2026-09-18", [["p-003", 3, 140], ["p-007", 2, 210], ["p-001", 2, 50]], 50, "concluido",
+      [["2026-09-18", 300, "pix"], ["2026-09-23", 200, "transferencia"]]),
     venda("000101", "c-0003", "2026-09-04", [["p-001", 12, 45], ["p-004", 4, 35]]),
     venda("000069", "c-0003", "2026-08-12", [["p-002", 4, 75], ["p-005", 3, 38]], 1),
     venda("000055", "c-0003", "2026-07-21", [["p-003", 3, 143.33]]),
@@ -274,7 +286,8 @@ window.MGK_MOCK_VENDAS = (function () {
     venda("000050", "c-0005", "2026-07-03", [["p-008", 2, 120], ["p-005", 2, 35]]),
     venda("000024", "c-0005", "2026-04-22", [["p-001", 3, 50], ["p-004", 1, 60]]),
     // Studio Hair Fictício ME
-    venda("000133", "c-0006", "2026-09-21", [["p-003", 3, 150], ["p-006", 1, 75]], 0, "andamento"),
+    venda("000133", "c-0006", "2026-09-21", [["p-003", 3, 150], ["p-006", 1, 75]], 0, "andamento",
+      [["2026-09-21", 200, "credito"]]),
     venda("000079", "c-0006", "2026-08-25", [["p-007", 2, 220], ["p-005", 2, 40]]),
     venda("000051", "c-0006", "2026-07-08", [["p-001", 10, 50], ["p-004", 4, 45]]),
     venda("000038", "c-0006", "2026-06-01", [["p-002", 4, 72.5]]),
