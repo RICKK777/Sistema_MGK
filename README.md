@@ -1,8 +1,10 @@
-# Sistema MGK — Front-end (Etapa 2: Clientes e Vendas)
+# Sistema MGK — Front-end (Etapa 3: Clientes, Produtos, Vendas e Pagamentos)
 
 Front-end do Sistema MGK (Makyuner Professional), feito com HTML, CSS, JavaScript e Bootstrap 5.3.
 
-Esta etapa cobre o cadastro e a consulta de clientes, a ficha do cliente com histórico de compras e o cadastro de vendas. Vendedores, estoque, pagamentos e metas aparecem desabilitados no menu, à espera das próximas etapas.
+Esta etapa cobre o cadastro e a consulta de clientes, o cadastro de produtos, a ficha do cliente com histórico de compras, o cadastro de vendas e o **pagamento em partes** (o cliente paga uma parte na hora e o resto depois, e pode abater a conta em aberto numa compra nova). Vendedores, estoque, a tela de pagamentos (contas a receber) e metas aparecem desabilitados no menu, à espera das próximas etapas.
+
+> **Atualizando uma versão anterior com o back-end?** É preciso criar a tabela `pagamentos` no MySQL. Veja [docs/ATUALIZACOES.md](docs/ATUALIZACOES.md), que resume tudo que mudou e traz o passo a passo do banco.
 
 ## Como executar
 
@@ -20,6 +22,10 @@ O guia [docs/GUIA-JAVASCRIPT.md](docs/GUIA-JAVASCRIPT.md) explica todo o JavaScr
 
 O guia [docs/BANCO-DE-DADOS.md](docs/BANCO-DE-DADOS.md) traz as tabelas do MySQL, o script SQL e o contrato da API para ligar o sistema a um back-end.
 
+O [docs/ATUALIZACOES.md](docs/ATUALIZACOES.md) resume o que mudou nesta etapa (produtos e pagamentos) e o que fazer no banco.
+
+O back-end (Node.js + Express + MySQL) fica em [backend/](backend/README.md), com o guia [backend/docs/GUIA-BACKEND.md](backend/docs/GUIA-BACKEND.md).
+
 ## Estrutura
 
 ```text
@@ -33,7 +39,9 @@ sistema-mgk/
 │   └── style.css           # Tema MGK (amarelo + preto) sobre o Bootstrap
 ├── docs/
 │   ├── GUIA-JAVASCRIPT.md  # Explicação do JavaScript
-│   └── BANCO-DE-DADOS.md   # Tabelas MySQL + contrato da API
+│   ├── BANCO-DE-DADOS.md   # Tabelas MySQL + contrato da API
+│   └── ATUALIZACOES.md     # O que mudou (produtos e pagamentos) + atualização do banco
+├── backend/                # API Node.js + Express + MySQL (veja backend/README.md)
 ├── js/
 │   ├── config.js           # Modo de dados: "local" (localStorage) ou "api" (back-end)
 │   ├── mock-data.js        # Clientes, produtos e vendas FICTÍCIOS de demonstração
@@ -106,7 +114,9 @@ Estrutura das vendas:
 
 ```js
 // Venda
-{ id, numero, clienteId, data, produtos: [...], subtotal, desconto, total, status }
+{ id, numero, clienteId, data, produtos: [...], subtotal, desconto, total, status, pagamentos: [...] }
+// Pagamento (o saldo em aberto é sempre total − soma dos pagamentos; não é gravado)
+{ id, data, valor, forma, observacao }
 // Produto dentro da venda
 { produtoId, nome, quantidade, precoPadrao, precoUnitario, subtotal }
 ```
@@ -120,8 +130,8 @@ Estrutura das vendas:
 Toda leitura e escrita de dados passa pelos repositórios de `js/app.js`. Cada um tem duas implementações com a mesma interface, uma para o localStorage e outra para a API, e as telas não sabem qual está em uso:
 
 - `MGK.clientes`: `listar`, `obter`, `buscar`, `salvar`, `documentoEmUso`
-- `MGK.produtos`: `listar`, `obter`
-- `MGK.vendas`: `listar`, `obter`, `porCliente`, `registrar` + regras `calcular`, `resumir`, `resumoCliente`
+- `MGK.produtos`: `listar` (só ativos), `listarTodos`, `obter`, `salvar`, `excluir`, `aoAlterar`
+- `MGK.vendas`: `listar`, `obter`, `porCliente`, `registrar`, `registrarPagamento` + regras `calcular`, `resumir`, `resumoCliente`, `pagamento`, `contaEmAberto`, `distribuirPagamento`
 
 Os métodos que acessam dados são **assíncronos** (devolvem `Promise`) e são chamados com `await` nas telas. Erros chegam como `MGK.ErroMGK`, com `message` para o usuário e `status` HTTP.
 

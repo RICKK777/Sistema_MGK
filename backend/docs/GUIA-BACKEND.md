@@ -4,6 +4,8 @@ Este guia explica **todo** o back-end do projeto: o que é uma API, como a requi
 
 > Dica: leia com o código aberto ao lado. Links do tipo [server.js:18](../src/server.js#L18) levam direto para a linha citada.
 
+> **Atualização (produtos e pagamentos):** a API ganhou o cadastro de produtos (`POST`, `PUT` e `DELETE /produtos`, [seção 9](#9-rotasprodutosjs-cadastro-de-produtos)) e o **pagamento em partes**: tabela `pagamentos`, pagamento na hora da venda com abatimento da conta em aberto e `POST /vendas/:id/pagamentos` ([seções 11.3 a 11.5](#113-pagamentos-no-registro-da-venda-e-abatimento-da-conta)). **Banco criado antes disso precisa de uma atualização**: veja [ATUALIZACOES.md](../../docs/ATUALIZACOES.md).
+
 ---
 
 ## Sumário
@@ -17,9 +19,9 @@ Este guia explica **todo** o back-end do projeto: o que é uma API, como a requi
 6. [db.js: a conexão com o MySQL](#6-dbjs-a-conexão-com-o-mysql)
 7. [erros.js: erros com status HTTP](#7-errosjs-erros-com-status-http)
 8. [validacao.js: nunca confie no navegador](#8-validacaojs-nunca-confie-no-navegador)
-9. [rotas/produtos.js: a rota mais simples](#9-rotasprodutosjs-a-rota-mais-simples)
+9. [rotas/produtos.js: cadastro de produtos](#9-rotasprodutosjs-cadastro-de-produtos)
 10. [rotas/clientes.js: busca, cadastro e edição](#10-rotasclientesjs-busca-cadastro-e-edição)
-11. [rotas/vendas.js: transações e itens](#11-rotasvendasjs-transações-e-itens)
+11. [rotas/vendas.js: transações, itens e pagamentos](#11-rotasvendasjs-transações-itens-e-pagamentos)
 12. [Fluxo completo: do botão "Salvar" até o MySQL](#12-fluxo-completo-do-botão-salvar-até-o-mysql)
 13. [Testando a API sem o site](#13-testando-a-api-sem-o-site)
 14. [Erros comuns e como resolver](#14-erros-comuns-e-como-resolver)
@@ -108,9 +110,11 @@ A ordem recomendada: **Node.js → MySQL Server → Workbench (conectar e criar 
 **Criar o banco, as tabelas e os produtos:**
 
 1. Com a conexão aberta, clique no ícone **SQL+** (primeiro da barra, "Create a new SQL tab").
-2. Cole o script da **seção 5** de [BANCO-DE-DADOS.md](../../Sistema_MGK/docs/BANCO-DE-DADOS.md#5-script-sql-completo) e clique no **raio ⚡** (executa tudo). Na parte de baixo (*Output*), todas as linhas devem ficar com ✔ verde.
+2. Cole o script da **seção 5** de [BANCO-DE-DADOS.md](../../docs/BANCO-DE-DADOS.md#5-script-sql-completo) e clique no **raio ⚡** (executa tudo). Na parte de baixo (*Output*), todas as linhas devem ficar com ✔ verde.
 3. Em uma nova aba, cole os produtos da **seção 6** e execute com o ⚡.
-4. Na lateral esquerda (**Schemas**), clique em 🔄 (atualizar). O banco `mgk` aparece com as 4 tabelas.
+4. Na lateral esquerda (**Schemas**), clique em 🔄 (atualizar). O banco `mgk` aparece com as **5 tabelas**: `clientes`, `produtos`, `vendas`, `venda_itens` e `pagamentos`.
+
+> **Já tinha criado o banco antes da tabela `pagamentos`?** Não precisa apagar nada. Rode só o script de atualização de [ATUALIZACOES.md](../../docs/ATUALIZACOES.md#o-que-fazer-no-banco).
 
 > Os nomes das tabelas e das colunas precisam ser **exatamente** os do documento. Se você criar as tabelas "na mão" pela interface do Workbench, confira cada nome com a seção 4 de `BANCO-DE-DADOS.md`.
 
@@ -511,13 +515,14 @@ app.use((req, res, next) => {
   const origem = req.headers.origin;                    // quem está pedindo
   if (ORIGENS.includes("*")) res.set("Access-Control-Allow-Origin", "*");
   else if (origem && ORIGENS.includes(origem)) res.set({ "Access-Control-Allow-Origin": origem, Vary: "Origin" });
-  res.set({ "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Accept" });
+  res.set({ "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Accept" });
   if (req.method === "OPTIONS") return res.sendStatus(204);   // "pré-voo"
   next();                                                      // segue para a próxima etapa
 });
 ```
 
 - **Pré-voo (OPTIONS):** antes de um `POST` com JSON, o navegador manda um `OPTIONS` perguntando "posso?". Respondemos `204` (sim, sem conteúdo) com os cabeçalhos acima.
+- **`Access-Control-Allow-Methods`** lista os métodos que o site pode usar. O `DELETE` entrou com a exclusão de produtos: sem ele, o navegador bloqueia o `DELETE /produtos/:id` no pré-voo.
 - **`next()`** é o que passa o pedido adiante na fila. Se você esquecer de chamar, o pedido fica "pendurado" para sempre.
 
 > O CORS é uma regra **do navegador**. Ferramentas como curl ou Postman não ligam para ele. Então "funciona no Postman mas não no site" quase sempre é problema de CORS.
@@ -802,31 +807,54 @@ export const centavos = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 No JavaScript, `0.1 + 0.2` dá `0.30000000000000004`, porque os números são binários. Arredondar para 2 casas depois de cada conta evita esses resíduos. No banco, o tipo `DECIMAL(10,2)` guarda o valor exato.
 
+### `validarProduto` ([linha 117](../src/validacao.js#L117))
+
+Mesmo formato do `validarCliente` (`{ erro }` ou `{ dados }`). Monta `{ nome, preco_padrao, ativo }` já com os **nomes das colunas** (o `dados` vai direto para `INSERT ... SET ?`) e confere: nome com 2 a 120 caracteres e preço maior que zero. O `ativo` só é `false` se vier exatamente `false`.
+
+### `FORMAS_PAGAMENTO` e `validarPagamento` ([linhas 82–115](../src/validacao.js#L82-L115))
+
+`FORMAS_PAGAMENTO` é um `Set` com as formas aceitas, as mesmas do `ENUM` da tabela `pagamentos` e de `MGK.vendas.FORMAS_PAGAMENTO` no site. `Set.has(x)` responde "está na lista?" sem percorrer um array.
+
+`validarPagamento(corpo, saldo, { permitirZero })` serve para os dois tipos de pagamento:
+
+| Uso | `saldo` (máximo permitido) | `permitirZero` |
+| --- | --- | --- |
+| Pagamento na hora da venda (`POST /vendas`) | total da venda **+ conta em aberto** do cliente | `true` (0 = paga tudo depois) |
+| Pagamento posterior (`POST /vendas/:id/pagamentos`) | saldo da venda | `false` |
+
+Regras: valor ≥ 0 (> 0 se `permitirZero` for falso), valor ≤ máximo, forma válida quando o valor é maior que zero e observação de até 255 caracteres.
+
 ---
 
-## 9. rotas/produtos.js: a rota mais simples
+## 9. rotas/produtos.js: cadastro de produtos
 
 Arquivo: [src/rotas/produtos.js](../src/rotas/produtos.js). **Comece a estudar as rotas por aqui.**
+
+| Rota | O que faz |
+| --- | --- |
+| `GET /produtos` | Só os ativos (tela de venda) |
+| `GET /produtos?todos=1` | Ativos e inativos (tela de produtos) |
+| `GET /produtos/:id` | Um produto, mesmo inativo |
+| `POST /produtos` | Cadastra. Nome repetido → 409 |
+| `PUT /produtos/:id` | Edita, ativa ou inativa. Nome repetido → 409 |
+| `DELETE /produtos/:id` | Exclui, **só se o produto nunca foi vendido** (senão 409) |
+
+As rotas de leitura:
 
 ```js
 import { Router } from "express";
 const router = Router();          // um "mini-app" só com as rotas de produtos
 
-const CAMPOS = "id, nome, preco_padrao AS precoPadrao";
+const CAMPOS = "id, nome, preco_padrao AS precoPadrao, ativo IS TRUE AS ativo, criado_em AS criadoEm, atualizado_em AS atualizadoEm";
+
+/** O MySQL devolve BOOLEAN como 0/1; o site espera true/false. */
+const comAtivo = (p) => ({ ...p, ativo: Boolean(p.ativo) });
 
 router.get("/", async (req, res) => {
-  const [linhas] = await pool.query(`SELECT ${CAMPOS} FROM produtos WHERE ativo ORDER BY nome`);
-  res.json(linhas);
+  const where = req.query.todos ? "" : "WHERE ativo";
+  const [linhas] = await pool.query(`SELECT ${CAMPOS} FROM produtos ${where} ORDER BY nome`);
+  res.json(linhas.map(comAtivo));
 });
-
-router.get("/:id", async (req, res) => {
-  const id = idDaRota(req.params.id, "Produto não encontrado.");
-  const [linhas] = await pool.query(`SELECT ${CAMPOS} FROM produtos WHERE id = ?`, [id]);
-  if (!linhas.length) throw new HttpError(404, "Produto não encontrado.");
-  res.json(linhas[0]);
-});
-
-export default router;
 ```
 
 Pontos para entender:
@@ -834,9 +862,13 @@ Pontos para entender:
 - **`Router()`** agrupa rotas relacionadas. O `server.js` o monta em `/api/produtos`.
 - **`:id`** é um parâmetro: `/api/produtos/7` → `req.params.id === "7"`.
 - **`AS precoPadrao`** renomeia a coluna na resposta. O banco usa `snake_case` (padrão do SQL) e o JavaScript usa `camelCase`. O `AS` faz a ponte, e o site recebe exatamente os nomes que espera.
-- **`${CAMPOS}`** dentro do SQL é seguro aqui porque `CAMPOS` é um texto **fixo**, escrito por nós. A regra do `?` vale para valores que vêm **do usuário**.
+- **`${CAMPOS}` e `${where}`** dentro do SQL são seguros aqui porque são textos **fixos**, escritos por nós (o `where` só pode ser `""` ou `"WHERE ativo"`). A regra do `?` vale para valores que vêm **do usuário**.
 - **`WHERE ativo`** esconde produtos desativados da tela de venda. O `GET /:id` não filtra, porque vendas antigas podem citar um produto que hoje está inativo.
-- **`linhas[0]`**: o `SELECT` sempre devolve um array, mesmo buscando por id. Para um item só, pegamos o primeiro.
+- **BOOLEAN no MySQL é um número** (`TINYINT`, 0 ou 1). O `comAtivo` converte para `true`/`false`.
+
+As rotas de gravação seguem o mesmo modelo de clientes ([seção 10](#10-rotasclientesjs-busca-cadastro-e-edição)): `validarProduto` → `INSERT/UPDATE ... SET ?` → `buscarPorId` para devolver o registro como ficou no banco. O **nome é único** (`UNIQUE KEY uk_produtos_nome`), e `tratarDuplicado` transforma o `ER_DUP_ENTRY` do MySQL em 409.
+
+**Excluir** ([linha 62](../src/rotas/produtos.js#L62)) não precisa conferir se o produto foi vendido: **o banco já faz isso**. A chave estrangeira `venda_itens.produto_id → produtos.id` é `ON DELETE RESTRICT`, então o `DELETE` falha com `ER_ROW_IS_REFERENCED_2`, e a rota responde 409 sugerindo inativar. Uma regra garantida pelo banco vale até para quem mexer direto no Workbench.
 
 ---
 
@@ -906,11 +938,11 @@ Se o id não existir, o `UPDATE` não dá erro: ele simplesmente altera **0 linh
 
 ---
 
-## 11. rotas/vendas.js: transações e itens
+## 11. rotas/vendas.js: transações, itens e pagamentos
 
 Arquivo: [src/rotas/vendas.js](../src/rotas/vendas.js). É o arquivo mais completo. Estude por último.
 
-### 11.1 `buscarVendas`: 2 consultas em vez de N+1 ([linha 18](../src/rotas/vendas.js#L18))
+### 11.1 `buscarVendas`: 3 consultas em vez de N+1 ([linha 22](../src/rotas/vendas.js#L22))
 
 Cada venda precisa vir com seus itens (`venda.produtos`). O jeito ingênuo:
 
@@ -938,11 +970,15 @@ for (const { vendaId, ...item } of itens) porVenda.get(vendaId).push(item);
 
 A linha do `Map` faz duas coisas ao mesmo tempo: cria `v.produtos = []` em cada venda e guarda no mapa `id → esse array`. Depois, cada item é empurrado no array da sua venda. `{ vendaId, ...item }` separa o `vendaId` (usado só para agrupar) do resto do item (que vai para a resposta).
 
+Os **pagamentos** seguem a mesma ideia: uma terceira consulta traz os pagamentos de todas as vendas (`WHERE venda_id IN (?)`, em ordem de data), e cada um vai para `venda.pagamentos`. No código atual, o `Map` guarda a venda inteira (`id → venda`) para servir aos dois agrupamentos. São **3 consultas** não importa quantas vendas existam.
+
 **`LPAD(id, 6, '0')`** transforma `123` em `"000123"`, o número do pedido que aparece na tela.
 
 O parâmetro `db = pool` permite chamar a função **dentro de uma transação** (passando a conexão da transação) ou fora dela (usando o pool).
 
-### 11.2 Registrar a venda: `POST /` ([linha 56](../src/rotas/vendas.js#L56))
+### 11.2 Registrar a venda: `POST /` ([linha 77](../src/rotas/vendas.js#L77))
+
+> O esquema abaixo mostra a venda **sem** o pagamento. Os passos de pagamento, que entram entre o 6 e o 9, estão em [11.3](#113-pagamentos-no-registro-da-venda-e-abatimento-da-conta).
 
 É o fluxo mais importante do sistema. Ele segue estes passos:
 
@@ -974,6 +1010,96 @@ Detalhes que valem ouro:
   ```
 - **`total` e `subtotal` dos itens não são gravados pela API:** no banco, eles são **colunas geradas** (`AS (subtotal - desconto) STORED`), que o próprio MySQL calcula. Assim, nunca ficam inconsistentes.
 - **`throw new HttpError(...)` dentro da transação** faz o `transacao()` dar `ROLLBACK` e repassar o erro, que chega ao tratador e vira a resposta.
+
+### 11.3 Pagamentos no registro da venda e abatimento da conta
+
+O corpo do `POST /vendas` traz também o que o cliente pagou **na hora**:
+
+```json
+{ "clienteId": 1, "itens": [...], "desconto": 0, "pagamento": { "valor": 130, "forma": "pix" } }
+```
+
+- `valor: 0` → o cliente vai pagar tudo depois (nenhuma linha em `pagamentos`).
+- `valor` menor que o total → o resto fica em aberto.
+- `valor` **maior** que o total → se o cliente tem compras anteriores não pagas (a "conta em aberto"), a diferença **abate essa conta**, da venda mais antiga para a mais recente.
+
+Os passos extras, dentro da **mesma transação**:
+
+```text
+6a. Buscar as vendas do cliente não canceladas, da mais antiga para a mais recente, COM FOR UPDATE
+6b. Somar os pagamentos de cada uma e calcular o saldo → "abertas" (saldo > 0) e contaAnterior (soma)
+6c. validarPagamento(pagamento, total + contaAnterior, { permitirZero: true })
+ 7. INSERT INTO vendas ...
+ 8. INSERT INTO venda_itens ...
+ 9. Distribuir o valor:
+      naVenda = min(valor, total)                 → pagamento "Pago na venda"
+      sobra   = valor − naVenda
+      para cada venda aberta (mais antiga primeiro), enquanto sobrar:
+         parte = min(sobra, saldo dela)           → pagamento "Abatido na venda #000140"
+    INSERT INTO pagamentos VALUES ?               → tudo num único INSERT
+10. Responder a venda + abatimentos: [{ vendaId, numero, valor }]
+```
+
+Pontos para estudar:
+
+- **Por que buscar a conta antes de inserir a venda nova?** Assim ela não entra na própria conta anterior.
+- **`FOR UPDATE`** ([linha 116](../src/rotas/vendas.js#L116)) trava as linhas das vendas antigas até o `COMMIT`. Se duas vendas do mesmo cliente forem finalizadas ao mesmo tempo, a segunda **espera** a primeira terminar e já enxerga o saldo atualizado. Sem isso, as duas poderiam abater a mesma dívida e o cliente pagaria a mais.
+- **O limite é calculado no servidor**, com o total recalculado e os pagamentos do banco. O site mostra o mesmo limite, mas não é nele que se confia.
+- **`abatimentos` não é uma coluna**: é só um campo extra da resposta, para o site montar a mensagem "R$ 50 abatido da conta anterior (#000098, #000123)".
+
+### 11.4 Pagamento posterior: `POST /:id/pagamentos` ([linha 173](../src/rotas/vendas.js#L173))
+
+É o "cliente depositou mais uma parte". Corpo: `{ valor, forma, data, observacao }`.
+
+```text
+1. ABRIR TRANSAÇÃO
+2. SELECT ... FROM vendas WHERE id = ? FOR UPDATE    → 404 se não existe, 400 se cancelada
+3. SELECT SUM(valor) FROM pagamentos WHERE venda_id = ?
+   saldo = total − pago                              → 400 se já está quitada
+4. validarPagamento(corpo, saldo)                    → 0 < valor ≤ saldo, forma válida
+5. data: inválida → 400; no futuro → 400
+   (anterior à venda é PERMITIDO: é assim que se lança o histórico da planilha do Excel)
+6. INSERT INTO pagamentos ...
+7. COMMIT e responder 201 com a venda completa
+```
+
+- `const [[{ pago }]] = await db.query("SELECT COALESCE(SUM(valor), 0) AS pago ...")` é **desestruturação aninhada**: `query` devolve `[linhas, campos]`, `linhas` é um array com uma linha, e a linha tem o campo `pago`. `COALESCE(..., 0)` troca o `NULL` (venda sem pagamentos) por 0.
+- De novo o `FOR UPDATE`: dois pagamentos lançados ao mesmo tempo na mesma venda não conseguem, juntos, passar do saldo.
+
+### 11.5 A tabela `pagamentos` e o saldo
+
+```sql
+CREATE TABLE pagamentos (
+  id          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  venda_id    INT UNSIGNED  NOT NULL,
+  data        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  valor       DECIMAL(10,2) NOT NULL,
+  forma       ENUM('dinheiro','pix','debito','credito','transferencia','boleto','outro') NOT NULL,
+  observacao  VARCHAR(255)  NULL,
+  criado_em   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ...
+  CONSTRAINT fk_pag_venda FOREIGN KEY (venda_id) REFERENCES vendas (id) ON DELETE CASCADE,
+  CONSTRAINT ck_pag_valor CHECK (valor > 0)
+);
+```
+
+- **O saldo não é uma coluna.** Ele é sempre `vendas.total − SUM(pagamentos.valor)`. Se fosse gravado, qualquer pagamento esquecido de atualizar deixaria o saldo errado.
+- **`data` × `criado_em`**: `data` é quando o cliente **pagou** (pode ser semana passada); `criado_em` é quando alguém **lançou** no sistema.
+- **`ON DELETE CASCADE`**: apagar a venda apaga os pagamentos dela.
+
+Consulta útil: vendas com saldo em aberto (base para uma tela de "Contas a receber"):
+
+```sql
+SELECT v.id, v.cliente_id, v.total, v.total - COALESCE(SUM(p.valor), 0) AS saldo
+  FROM vendas v
+  LEFT JOIN pagamentos p ON p.venda_id = v.id
+ WHERE v.status <> 'cancelado'
+ GROUP BY v.id
+HAVING saldo > 0
+ ORDER BY v.data;
+```
+
+O `LEFT JOIN` mantém as vendas **sem nenhum** pagamento (com `JOIN` comum, elas sumiriam).
 
 ---
 
@@ -1050,7 +1176,26 @@ Content-Type: application/json
 POST http://localhost:3000/api/vendas
 Content-Type: application/json
 
-{ "clienteId": 1, "itens": [{ "produtoId": 1, "quantidade": 2, "precoUnitario": 45 }], "desconto": 10 }
+{ "clienteId": 1, "itens": [{ "produtoId": 1, "quantidade": 2, "precoUnitario": 45 }], "desconto": 10,
+  "pagamento": { "valor": 50, "forma": "pix" } }
+
+### Registrar mais uma parte paga (troque 1 pelo id da venda)
+POST http://localhost:3000/api/vendas/1/pagamentos
+Content-Type: application/json
+
+{ "valor": 30, "forma": "transferencia", "data": "2026-01-15T12:00:00.000Z", "observacao": "Depósito" }
+
+### Cadastrar produto
+POST http://localhost:3000/api/produtos
+Content-Type: application/json
+
+{ "nome": "Produto Teste", "precoPadrao": 25.9 }
+
+### Todos os produtos, inclusive inativos
+GET http://localhost:3000/api/produtos?todos=1
+
+### Excluir produto (409 se já foi vendido)
+DELETE http://localhost:3000/api/produtos/9
 ```
 
 Aparece um link "Send Request" em cima de cada bloco.
@@ -1082,7 +1227,10 @@ SELECT * FROM venda_itens WHERE venda_id = 1;
 | `ETIMEDOUT` / `ENOTFOUND` | O IP não responde ou o nome não existe | Confira o IP; em outro PC, veja o firewall (porta 3306) |
 | `ER_ACCESS_DENIED_ERROR` | Usuário ou senha errados | Confira `DB_USER`/`DB_PASSWORD`; veja se o usuário foi criado para `'%'` ou `'localhost'` |
 | `ER_BAD_DB_ERROR` | O banco `mgk` não existe | Crie o banco, ou corrija o `DB_NAME` |
-| `ER_NO_SUCH_TABLE` | Nome de tabela diferente do código | As tabelas devem se chamar `clientes`, `produtos`, `vendas`, `venda_itens` |
+| `ER_NO_SUCH_TABLE` | Nome de tabela diferente do código | As tabelas devem se chamar `clientes`, `produtos`, `vendas`, `venda_itens`, `pagamentos` |
+| `Table 'mgk.pagamentos' doesn't exist` (as vendas não abrem no site) | Banco criado antes do controle de pagamentos | Rode o script de [ATUALIZACOES.md](../../docs/ATUALIZACOES.md#o-que-fazer-no-banco) |
+| Todas as vendas antigas aparecem "Não pago" | Criou a tabela `pagamentos`, mas não rodou o `INSERT` que marca as vendas antigas como pagas | Rode o passo 2 de [ATUALIZACOES.md](../../docs/ATUALIZACOES.md#o-que-fazer-no-banco) |
+| Excluir produto dá "não pode ser excluído" | O produto já aparece em alguma venda | É proposital: inative o produto |
 | `ER_BAD_FIELD_ERROR: Unknown column` | Nome de coluna diferente do código | Compare com a seção 4 do `BANCO-DE-DADOS.md` |
 | `EADDRINUSE: :::3000` | Já tem algo usando a porta 3000 (talvez a própria API aberta em outro terminal) | Feche o outro terminal ou mude o `PORT` (e o `apiUrl` no site) |
 | `Cannot use import statement outside a module` | Falta `"type": "module"` no `package.json` | Adicione a linha |
@@ -1205,6 +1353,21 @@ Crie o `transacao()` no `db.js` e o `POST /` de vendas, seguindo os passos da se
 
 ✅ Teste: finalizar uma venda no site grava em `vendas` e `venda_itens`. Para ver o ROLLBACK funcionando, coloque um `throw new Error("teste")` logo depois do `INSERT INTO vendas`: a venda **não** deve aparecer no banco. Depois, remova o `throw`.
 
+### Etapa 13: cadastro de produtos
+
+Crie o `validarProduto`, o `POST /`, o `PUT /:id` (com 409 para nome repetido, como em clientes), o `?todos=1` no `GET /` e o `DELETE /:id` (409 quando o banco recusa por `ER_ROW_IS_REFERENCED_2`). Não esqueça o `DELETE` no CORS.
+
+✅ Teste: cadastrar, editar, inativar e excluir pela tela de Produtos. Excluir um produto já vendido deve mostrar a mensagem sugerindo inativar.
+
+### Etapa 14: pagamentos
+
+1. Crie a tabela `pagamentos` e inclua a terceira consulta no `buscarVendas`.
+2. Crie o `validarPagamento` e o `POST /:id/pagamentos` ([11.4](#114-pagamento-posterior-post-idpagamentos-linha-173)).
+3. No `POST /` de vendas, grave o pagamento feito na hora (só até o total).
+4. Por último, a conta em aberto com `FOR UPDATE` e o abatimento ([11.3](#113-pagamentos-no-registro-da-venda-e-abatimento-da-conta)).
+
+✅ Teste: venda com "Outro valor" menor que o total → fica em aberto na ficha; "Registrar pagamento" até quitar; nova venda pagando mais que o total → o pedido antigo recebe um pagamento "Abatido na venda #...". Confira no Workbench: `SELECT * FROM pagamentos ORDER BY id DESC;`.
+
 🎉 Neste ponto, você reconstruiu o back-end inteiro.
 
 ---
@@ -1215,8 +1378,8 @@ Do mais fácil para o mais difícil.
 
 1. **Contagem:** crie `GET /api/clientes/total` que responde `{ "total": 11 }`. *Dica: `SELECT COUNT(*) AS total`. Cuidado com a ordem: essa rota precisa vir **antes** do `/:id`, senão o Express acha que "total" é um id.*
 2. **Produtos por preço:** aceite `GET /api/produtos?ordem=preco` para ordenar por preço. *Cuidado: não coloque o texto do usuário direto no `ORDER BY`; use um `if` escolhendo entre textos fixos.*
-3. **Cadastrar produto:** crie `POST /api/produtos` com validação (nome obrigatório, preço > 0) e `409` para nome repetido.
-4. **Desativar produto:** crie `DELETE /api/produtos/:id` que **não apaga**, só faz `UPDATE produtos SET ativo = FALSE`. Por que apagar de verdade daria erro? *(Pense na `FOREIGN KEY` de `venda_itens`.)* Adicione `DELETE` no `Access-Control-Allow-Methods`.
+3. **Contas a receber:** crie `GET /api/vendas/em-aberto` com as vendas de todos os clientes que têm saldo, com o nome do cliente e o saldo. *Dica: a consulta da seção 11.5 + `JOIN clientes`. A rota precisa vir antes do `/:id`.*
+4. **Estornar pagamento:** crie `DELETE /api/vendas/:id/pagamentos/:pagamentoId` para apagar um pagamento lançado errado. Confira se o pagamento é **daquela** venda (`WHERE id = ? AND venda_id = ?`) e responda 404 se `affectedRows` for 0.
 5. **Cancelar venda:** crie `PUT /api/vendas/:id/cancelar` que muda o status para `cancelado`. Responda 409 se ela já estiver cancelada.
 6. **Paginação:** aceite `?pagina=2&porPagina=20` em `GET /api/clientes`. *Dica: `LIMIT ? OFFSET ?`.*
 7. **Relatório:** crie `GET /api/relatorios/mais-vendidos` com os 5 produtos mais vendidos (soma de quantidade), ignorando vendas canceladas. *Dica: `JOIN`, `GROUP BY`, `ORDER BY ... DESC LIMIT 5`.*
@@ -1245,3 +1408,6 @@ Do mais fácil para o mais difícil.
 | **Variável de ambiente** | Configuração de fora do código (`process.env.X`), vinda do `.env` |
 | **snake_case / camelCase** | `preco_padrao` (padrão do SQL) / `precoPadrao` (padrão do JavaScript) |
 | **N+1** | Erro de desempenho: fazer uma consulta por item em vez de uma para todos |
+| **`FOR UPDATE`** | Trava as linhas lidas até o fim da transação; outra transação que queira as mesmas linhas espera |
+| **`LEFT JOIN`** | Junta duas tabelas mantendo as linhas da esquerda mesmo sem par na direita (ex.: venda sem pagamentos) |
+| **Saldo em aberto** | `total da venda − soma dos pagamentos`; calculado, nunca gravado |

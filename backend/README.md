@@ -1,6 +1,6 @@
 # Sistema MGK — Back-end (API)
 
-API em **Node.js + Express** que liga o site (`../Sistema_MGK`) ao **MySQL**.
+API em **Node.js + Express** que liga o site (a pasta acima, `Sistema_MGK`) ao **MySQL**.
 
 ```text
 Site (navegador) ──HTTP/JSON──▶ esta API ──SQL──▶ MySQL
@@ -10,9 +10,11 @@ Site (navegador) ──HTTP/JSON──▶ esta API ──SQL──▶ MySQL
 
 ## 1. Criar o banco (MySQL Workbench)
 
-Crie o banco `mgk` e as tabelas `clientes`, `produtos`, `vendas` e `venda_itens`.
+Crie o banco `mgk` e as tabelas `clientes`, `produtos`, `vendas`, `venda_itens` e `pagamentos`.
 
-**Os nomes das tabelas e das colunas precisam ser exatamente os de [Sistema_MGK/docs/BANCO-DE-DADOS.md](../Sistema_MGK/docs/BANCO-DE-DADOS.md)** (seção 4). A API usa esses nomes nas consultas. O script pronto está na seção 5 do documento, e os produtos iniciais na seção 6.
+> **Banco criado antes da tabela `pagamentos`?** Não recrie nada: rode só o script de atualização de [docs/ATUALIZACOES.md](../docs/ATUALIZACOES.md#o-que-fazer-no-banco). Sem essa tabela, as rotas de vendas dão erro.
+
+**Os nomes das tabelas e das colunas precisam ser exatamente os de [docs/BANCO-DE-DADOS.md](../docs/BANCO-DE-DADOS.md)** (seção 4). A API usa esses nomes nas consultas. O script pronto está na seção 5 do documento, e os produtos iniciais na seção 6.
 
 Crie também um usuário para a API (não use o `root`):
 
@@ -68,11 +70,11 @@ backend/
     ├── server.js        # inicia a API, CORS e tratamento de erros
     ├── db.js            # conexão com o MySQL (lê o .env) e transações
     ├── erros.js         # HttpError (status + mensagem para o usuário)
-    ├── validacao.js     # CPF/CNPJ, telefone, CEP... (mesmas regras do site)
+    ├── validacao.js     # CPF/CNPJ, telefone, CEP, produto, pagamento (mesmas regras do site)
     └── rotas/
         ├── clientes.js  # GET/POST/PUT /api/clientes
-        ├── produtos.js  # GET /api/produtos
-        └── vendas.js    # GET/POST /api/vendas (registro em transação)
+        ├── produtos.js  # GET/POST/PUT/DELETE /api/produtos
+        └── vendas.js    # GET/POST /api/vendas e POST /api/vendas/:id/pagamentos (em transação)
 ```
 
-As rotas e o formato do JSON estão descritos na seção 7 de [BANCO-DE-DADOS.md](../Sistema_MGK/docs/BANCO-DE-DADOS.md).
+As rotas e o formato do JSON estão descritos na seção 7 de [BANCO-DE-DADOS.md](../docs/BANCO-DE-DADOS.md).

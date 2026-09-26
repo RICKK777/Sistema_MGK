@@ -2,6 +2,8 @@
 
 Este guia mostra **quais tabelas criar no MySQL** para o Sistema MGK e **como o back-end deve responder** para o front-end funcionar sem nenhuma alteração nas telas.
 
+> **Banco já criado antes da tela de produtos e dos pagamentos?** Não recrie o banco: siga o passo a passo de [ATUALIZACOES.md](ATUALIZACOES.md#o-que-fazer-no-banco). A única mudança é a tabela nova `pagamentos`.
+
 ## Sumário
 
 1. [Como as peças se encaixam](#1-como-as-peças-se-encaixam)
@@ -36,7 +38,7 @@ Este guia mostra **quais tabelas criar no MySQL** para o Sistema MGK e **como o 
 | `js/config.js` | Escolhe o modo (`"local"` ou `"api"`) e a URL da API. **É o único arquivo que muda para ligar o back-end.** |
 | `js/app.js` → `MGK.api` | Cliente HTTP: envia/recebe JSON, aplica timeout e transforma erros em mensagens para o usuário. |
 | `js/app.js` → `MGK.clientes`, `MGK.produtos`, `MGK.vendas` | Repositórios com **duas implementações de mesma interface**: `...Local` (localStorage) e `...Api` (HTTP). As telas não sabem qual está em uso. |
-| Telas (`clientes.js`, `cadastro-cliente.js`, `venda.js`) | Já usam `await` em todas as leituras/gravações e tratam falhas de conexão com uma mensagem na tela. |
+| Telas (`clientes.js`, `cadastro-cliente.js`, `venda.js`, `produtos.js`) | Já usam `await` em todas as leituras/gravações e tratam falhas de conexão com uma mensagem na tela. |
 
 ---
 
@@ -345,13 +347,14 @@ CREATE TABLE pagamentos (
 ) ENGINE=InnoDB;
 ```
 
-> **Banco já criado antes dos pagamentos?** Rode só o `CREATE TABLE pagamentos` acima e depois este comando, que considera quitadas as vendas antigas (antes elas não tinham controle de pagamento):
+> **Banco já criado antes dos pagamentos?** Rode só o `CREATE TABLE pagamentos` acima e decida o que fazer com as vendas antigas (considerar pagas ou lançar os pagamentos reais). O passo a passo completo, com backup e conferência, está em [ATUALIZACOES.md](ATUALIZACOES.md#o-que-fazer-no-banco). Para considerar todas as vendas antigas quitadas:
 >
 > ```sql
 > INSERT INTO pagamentos (venda_id, data, valor, forma, observacao)
-> SELECT id, data, total, 'outro', 'Registrado antes do controle de pagamentos'
->   FROM vendas
->  WHERE status <> 'cancelado' AND total > 0;
+> SELECT v.id, v.data, v.total, 'outro', 'Registrado antes do controle de pagamentos'
+>   FROM vendas v
+>  WHERE v.status <> 'cancelado' AND v.total > 0
+>    AND NOT EXISTS (SELECT 1 FROM pagamentos p WHERE p.venda_id = v.id);
 > ```
 
 ### Usuário do banco para a API
@@ -699,11 +702,13 @@ SELECT m.valor_meta, COALESCE(SUM(v.total), 0) AS realizado
 
 ## 10. Checklist de integração
 
-- [ ] Rodar o script da [seção 5](#5-script-sql-completo) e os produtos da [seção 6](#6-dados-iniciais-produtos)
+- [ ] Rodar o script da [seção 5](#5-script-sql-completo) e os produtos da [seção 6](#6-dados-iniciais-produtos) (banco já existente: [ATUALIZACOES.md](ATUALIZACOES.md#o-que-fazer-no-banco))
 - [ ] Criar o usuário `mgk_app` e colocar as credenciais no `.env` do back-end
 - [ ] Implementar as rotas da [seção 7](#7-contrato-da-api), com respostas em camelCase, dinheiro como número e datas em ISO
 - [ ] Liberar CORS para o endereço do front-end
 - [ ] Testar as rotas (Postman/Insomnia) antes de ligar o front-end
 - [ ] Trocar `modo` para `"api"` em `js/config.js`
 - [ ] Testar no navegador: cadastrar cliente, editar, CPF repetido (deve avisar), registrar venda, abrir a ficha e os detalhes da venda
+- [ ] Testar produtos: cadastrar (aparece na venda?), nome repetido (deve avisar), inativar, excluir produto já vendido (deve recusar)
+- [ ] Testar pagamentos: venda com valor menor que o total (fica em aberto), registrar pagamento até quitar, pagamento com data antiga, venda pagando mais que o total para cliente com conta em aberto (abate o pedido mais antigo)
 - [ ] Desligar a API e conferir se as telas mostram "Não foi possível conectar ao servidor" em vez de travar
