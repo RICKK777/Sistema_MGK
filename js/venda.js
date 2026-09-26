@@ -416,19 +416,73 @@
   });
 
   /* ------------------------------------------------------------------------
+     5. Catálogo de produtos
+     Recarregado quando um produto é cadastrado/alterado em outra aba e ao voltar para esta aba,
+     para que produtos novos apareçam sem precisar recarregar a página.
+     ------------------------------------------------------------------------ */
+  const assinatura = (lista) => JSON.stringify(lista.map((p) => [p.id, p.nome, p.precoPadrao]));
+  let cargaAtual = 0; // descarta respostas antigas que cheguem atrasadas
+
+  /** Aplica o catálogo novo à venda em andamento. `antes` é o catálogo anterior ([] na primeira carga). */
+  const aplicarCatalogo = (lista, antes) => {
+    catalogo = lista;
+    const anterior = (id) => antes.find((p) => mesmoId(p.id, id));
+
+    // Produto inativado depois de entrar na venda não pode mais ser vendido
+    const indisponiveis = venda.itens.filter((i) => !produtoPorId(i.produtoId));
+    if (indisponiveis.length) {
+      venda.itens = venda.itens.filter((i) => produtoPorId(i.produtoId));
+      const nomes = indisponiveis.map((i) => anterior(i.produtoId)?.nome).filter(Boolean).join(", ");
+      ui.toast(`Removido da venda (produto inativo ou excluído): ${nomes}.`, "error");
+    }
+
+    // Itens com o preço padrão antigo acompanham o novo preço; preços ajustados à mão são mantidos
+    venda.itens.forEach((i) => {
+      const velho = anterior(i.produtoId);
+      if (velho && i.precoUnitario === velho.precoPadrao) i.precoUnitario = produtoPorId(i.produtoId).precoPadrao;
+    });
+
+    const selecionado = el.produtoNovo.value;
+    el.produtoNovo.innerHTML = `<option value="">${catalogo.length ? "Selecione um produto" : "Nenhum produto ativo cadastrado"}</option>${opcoesProduto(selecionado)}`;
+    renderItens();
+
+    if (antes.length) {
+      const novos = catalogo.filter((p) => !anterior(p.id));
+      if (novos.length) ui.toast(`Produto disponível para venda: ${novos.map((p) => p.nome).join(", ")}.`);
+    }
+  };
+
+  const atualizarCatalogo = async () => {
+    const minhaCarga = ++cargaAtual;
+    try {
+      const lista = await produtos.listar();
+      if (minhaCarga !== cargaAtual || assinatura(lista) === assinatura(catalogo)) return;
+      aplicarCatalogo(lista, catalogo);
+    } catch (err) {
+      console.warn("[MGK] Não foi possível atualizar os produtos.", err);
+    }
+  };
+
+  produtos.aoAlterar(atualizarCatalogo);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") atualizarCatalogo();
+  });
+  window.addEventListener("focus", atualizarCatalogo);
+
+  /* ------------------------------------------------------------------------
      Inicialização
      ------------------------------------------------------------------------ */
   const iniciar = async () => {
     renderItens();
     const clienteInicial = new URLSearchParams(location.search).get("cliente");
+    const minhaCarga = ++cargaAtual;
 
     try {
       const [lista, cliente] = await Promise.all([
         produtos.listar(),
         clienteInicial ? clientes.obter(clienteInicial) : null,
       ]);
-      catalogo = lista;
-      el.produtoNovo.insertAdjacentHTML("beforeend", opcoesProduto());
+      if (minhaCarga === cargaAtual) aplicarCatalogo(lista, []);
       selecionarCliente(cliente);
     } catch (err) {
       ui.toast(err.message || "Não foi possível carregar os produtos.", "error");

@@ -77,3 +77,22 @@ export function validarCliente(corpo = {}) {
 
 /** Arredonda para centavos, igual ao site. */
 export const centavos = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+/**
+ * Valida o corpo de POST/PUT /produtos e devolve os dados prontos para o banco.
+ * @returns {{ erro: string } | { dados: object }}
+ */
+export function validarProduto(corpo = {}) {
+  const dados = {
+    nome: texto(corpo.nome),
+    preco_padrao: centavos(corpo.precoPadrao),
+    ativo: corpo.ativo !== false,
+  };
+
+  let erro = null;
+  if (dados.nome.length < 2) erro = "Informe o nome do produto (mínimo 2 caracteres).";
+  else if (dados.nome.length > 120) erro = "O nome do produto passou do limite de 120 caracteres.";
+  else if (!(dados.preco_padrao > 0) || dados.preco_padrao > 9999999.99) erro = "Informe um preço padrão válido.";
+
+  return erro ? { erro } : { dados };
+}

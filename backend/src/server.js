@@ -19,7 +19,7 @@ app.use((req, res, next) => {
   const origem = req.headers.origin;
   if (ORIGENS.includes("*")) res.set("Access-Control-Allow-Origin", "*");
   else if (origem && ORIGENS.includes(origem)) res.set({ "Access-Control-Allow-Origin": origem, Vary: "Origin" });
-  res.set({ "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Accept" });
+  res.set({ "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Accept" });
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });

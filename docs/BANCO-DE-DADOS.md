@@ -159,10 +159,10 @@ Convenção: o **MySQL usa `snake_case`** (`criado_em`) e o **JSON da API usa `c
 | `id` | `id` | `INT UNSIGNED AUTO_INCREMENT` | |
 | `nome` | `nome` | `VARCHAR(120)` | |
 | `preco_padrao` | `precoPadrao` | `DECIMAL(10,2)` | Preço de tabela. **Nunca use `FLOAT` para dinheiro.** |
-| `ativo` | *(não enviado)* | `BOOLEAN` | Produto fora de linha fica `0`: some da tela de venda, mas continua no histórico |
-| `criado_em` / `atualizado_em` | *(opcional)* | `DATETIME` | |
+| `ativo` | `ativo` | `BOOLEAN` | Produto fora de linha fica `0`: some da tela de venda, mas continua no histórico |
+| `criado_em` / `atualizado_em` | `criadoEm` / `atualizadoEm` | `DATETIME` | |
 
-> Ainda não existe tela de cadastro de produtos. Por enquanto, eles são inseridos via SQL (seção 6).
+> Os produtos são cadastrados pela tela **Produtos** (`produtos.html`). O nome é único (`409` se repetir).
 
 ### 4.3 `vendas`
 
@@ -309,7 +309,7 @@ A senha fica em um arquivo `.env` do back-end, **fora do Git**, e nunca no front
 
 ## 6. Dados iniciais (produtos)
 
-Como ainda não há tela de produtos, cadastre o catálogo direto no banco. Estes são os mesmos produtos da demonstração:
+Opcional: os produtos podem ser cadastrados pela tela **Produtos** ou inseridos direto no banco. Estes são os mesmos produtos da demonstração:
 
 ```sql
 INSERT INTO produtos (nome, preco_padrao) VALUES
@@ -342,7 +342,11 @@ Todas as rotas ficam abaixo de `apiUrl` (ex.: `http://localhost:3000/api`). Requ
 | `POST` | `/clientes` | Cadastrar cliente | `201` → `Cliente` criado |
 | `PUT` | `/clientes/:id` | Editar cliente | `200` → `Cliente` atualizado |
 | `GET` | `/produtos` | Tela de venda | `200` → `Produto[]` ativos, por nome |
+| `GET` | `/produtos?todos=1` | Tela de produtos | `200` → `Produto[]` ativos e inativos, por nome |
 | `GET` | `/produtos/:id` | — | `200` → `Produto` · `404` |
+| `POST` | `/produtos` | Cadastrar produto | `201` → `Produto` criado · `409` se o nome já existir |
+| `PUT` | `/produtos/:id` | Editar, ativar ou inativar produto | `200` → `Produto` atualizado · `409` se o nome já existir |
+| `DELETE` | `/produtos/:id` | Excluir produto cadastrado por engano | `204` · `409` se o produto já foi usado em vendas |
 | `GET` | `/vendas` | — | `200` → `Venda[]` da mais recente para a mais antiga |
 | `GET` | `/vendas?clienteId=<id>` | Histórico e resumo da ficha | `200` → `Venda[]` do cliente, mais recente primeiro |
 | `GET` | `/vendas/:id` | Detalhes da venda | `200` → `Venda` · `404` |
@@ -376,7 +380,7 @@ Todas as rotas ficam abaixo de `apiUrl` (ex.: `http://localhost:3000/api`). Requ
 **Produto**
 
 ```json
-{ "id": 1, "nome": "Shampoo Profissional", "precoPadrao": 50.00 }
+{ "id": 1, "nome": "Shampoo Profissional", "precoPadrao": 50.00, "ativo": true }
 ```
 
 **Venda** (sempre com os itens em `produtos`, inclusive na listagem, porque o histórico mostra os produtos de cada pedido)

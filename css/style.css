@@ -1521,3 +1521,33 @@ h1, h2, h3, h4, h5, h6 {
     flex: 1 1 auto;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Produtos
+   -------------------------------------------------------------------------- */
+@media (min-width: 1200px) {
+  .product-form {
+    position: sticky;
+    top: calc(var(--mgk-topbar-height) + 1.5rem);
+  }
+}
+
+.product-row.is-inactive > td:not(:last-child) {
+  color: var(--mgk-gray-500);
+}
+
+.product-row.is-new > td {
+  background: var(--mgk-yellow-soft);
+}
+
+.product-row.is-editing > td:first-child,
+.product-row.is-new > td:first-child {
+  box-shadow: inset 4px 0 0 var(--mgk-yellow);
+}
+
+.btn-icon-danger:hover,
+.btn-icon-danger:focus-visible {
+  color: var(--mgk-white);
+  background: var(--mgk-danger);
+  border-color: var(--mgk-danger);
+}

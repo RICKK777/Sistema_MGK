@@ -27,6 +27,7 @@ sistema-mgk/
 ├── index.html              # Redireciona para a consulta de clientes
 ├── clientes.html           # Consulta/busca + ficha do cliente + detalhes da venda (modais)
 ├── cadastro-cliente.html   # Cadastro (novo) e edição (?id=...)
+├── produtos.html           # Cadastro, edição e lista de produtos (ativar/inativar)
 ├── venda.html              # Cadastro de venda (?cliente=... pré-seleciona o cliente)
 ├── css/
 │   └── style.css           # Tema MGK (amarelo + preto) sobre o Bootstrap
@@ -39,6 +40,7 @@ sistema-mgk/
 │   ├── app.js              # Núcleo: repositórios (local/API), cliente HTTP, máscaras, validações, toasts
 │   ├── clientes.js         # Lógica da consulta e da ficha do cliente
 │   ├── cadastro-cliente.js # Lógica da tela de cadastro/edição
+│   ├── produtos.js         # Lógica da tela de produtos
 │   └── venda.js            # Lógica do cadastro de venda
 └── assets/
     └── favicon.svg
@@ -58,6 +60,11 @@ sistema-mgk/
 - Resumo de compras: quantidade, total gasto e data da última compra (calculados a partir das vendas; vendas canceladas não entram na conta)
 - **Histórico de Compras** em painel expansível; clicar em uma compra abre os **detalhes da venda** (produtos, preço praticado, subtotal, desconto e total)
 - Botão **Nova venda**, que abre o cadastro de venda com o cliente já selecionado
+
+### Produtos
+- Cadastro com nome (único) e preço padrão; edição pelo botão de lápis na lista
+- Ativar/Inativar: produto inativo some da tela de venda, mas continua no histórico das vendas
+- A tela de venda recarrega o catálogo sozinha: produto cadastrado em outra aba (ou antes de voltar para a aba da venda) já aparece no seletor, sem recarregar a página
 
 ### Cadastro de venda
 - Cliente escolhido por busca de nome ou CPF/CNPJ (teclado: ↑ ↓ Enter Esc)

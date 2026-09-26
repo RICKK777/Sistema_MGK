@@ -229,6 +229,7 @@
     get: (caminho) => api.request("GET", caminho),
     post: (caminho, corpo) => api.request("POST", caminho, corpo),
     put: (caminho, corpo) => api.request("PUT", caminho, corpo),
+    delete: (caminho) => api.request("DELETE", caminho),
   };
 
   /** Transforma um 404 em `null` (para os métodos `obter`). */
@@ -286,7 +287,7 @@
   };
 
   const randomSuffix = () => crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(4, "0").slice(-4);
-  const newId = () => `c-${Date.now().toString(36)}${randomSuffix()}`;
+  const newId = (prefixo = "c") => `${prefixo}-${Date.now().toString(36)}${randomSuffix()}`;
 
   const clientesLocal = {
     async listar() {
@@ -394,17 +395,77 @@
 
   /* ------------------------------------------------------------------------
      Repositório de produtos
-     Produto: { id, nome, precoPadrao }
+     Produto: { id, nome, precoPadrao, ativo, criadoEm, atualizadoEm }
+       - Produto inativo some da tela de venda, mas continua no histórico das vendas.
      ------------------------------------------------------------------------ */
   const produtosStore = store(PRODUTOS_KEY, () => window.MGK_MOCK_PRODUTOS);
 
+  // Produtos gravados antes da tela de produtos não têm o campo `ativo`
+  const comAtivo = (p) => ({ ...p, ativo: p.ativo !== false });
+
   const produtosLocal = {
+    /** Produtos ativos (os que podem ser vendidos). */
     async listar() {
-      return porNome(produtosStore.read());
+      return (await produtosLocal.listarTodos()).filter((p) => p.ativo);
+    },
+
+    /** Todos os produtos, inclusive inativos (tela de produtos). */
+    async listarTodos() {
+      return porNome(produtosStore.read().map(comAtivo));
     },
 
     async obter(id) {
-      return produtosStore.read().find((p) => mesmoId(p.id, id)) || null;
+      const produto = produtosStore.read().find((p) => mesmoId(p.id, id));
+      return produto ? comAtivo(produto) : null;
+    },
+
+    /** Cria (sem id) ou atualiza (com id). Nome repetido gera ErroMGK 409, como na API. */
+    async salvar(dados) {
+      const lista = produtosStore.read();
+      const registro = {
+        ...dados,
+        nome: String(dados.nome ?? "").trim(),
+        precoPadrao: centavos(dados.precoPadrao),
+        ativo: dados.ativo !== false,
+      };
+      if (lista.some((p) => normalize(p.nome) === normalize(registro.nome) && !mesmoId(p.id, registro.id))) {
+        throw new ErroMGK("Já existe um produto cadastrado com este nome.", 409);
+      }
+      const idx = registro.id ? lista.findIndex((p) => mesmoId(p.id, registro.id)) : -1;
+      if (registro.id && idx < 0) throw new ErroMGK("Produto não encontrado.", 404);
+
+      if (idx >= 0) {
+        lista[idx] = { ...lista[idx], ...registro, atualizadoEm: new Date().toISOString() };
+      } else {
+        registro.id = newId("p");
+        registro.criadoEm = new Date().toISOString();
+        lista.push(registro);
+      }
+      produtosStore.write(lista);
+      return comAtivo(idx >= 0 ? lista[idx] : registro);
+    },
+
+    /**
+     * Exclui um produto cadastrado por engano. Produto que já aparece em alguma venda não pode
+     * ser excluído (o histórico depende dele): gera ErroMGK 409, como na API. Nesse caso, inative.
+     */
+    async excluir(id) {
+      const lista = produtosStore.read();
+      if (!lista.some((p) => mesmoId(p.id, id))) throw new ErroMGK("Produto não encontrado.", 404);
+      if (vendasStore.read().some((v) => v.produtos.some((item) => mesmoId(item.produtoId, id)))) {
+        throw new ErroMGK("Este produto já foi usado em vendas e não pode ser excluído. Inative-o para tirá-lo da venda.", 409);
+      }
+      produtosStore.write(lista.filter((p) => !mesmoId(p.id, id)));
+    },
+
+    /**
+     * Avisa quando os produtos forem alterados em outra aba (ex.: tela de produtos aberta ao lado
+     * da tela de venda). O evento "storage" só dispara nas OUTRAS abas do mesmo navegador.
+     */
+    aoAlterar(callback) {
+      window.addEventListener("storage", (event) => {
+        if (event.key === PRODUTOS_KEY || event.key === null) callback();
+      });
     },
 
     async restaurarDemonstracao() {
@@ -414,7 +475,20 @@
 
   const produtosApi = {
     listar: () => api.get("/produtos"),
+    listarTodos: () => api.get(`/produtos?${query({ todos: 1 })}`),
     obter: (id) => ouNulo(api.get(rota("/produtos", id))),
+
+    /** POST /produtos (novo) ou PUT /produtos/:id (edição). */
+    salvar(dados) {
+      const { id, criadoEm, atualizadoEm, ...corpo } = dados;
+      return id ? api.put(rota("/produtos", id), corpo) : api.post("/produtos", corpo);
+    },
+
+    /** DELETE /produtos/:id → 204; 409 se o produto já foi usado em vendas. */
+    excluir: (id) => api.delete(rota("/produtos", id)),
+
+    // Sem aviso entre abas no modo API: a tela de venda recarrega o catálogo ao voltar para a aba
+    aoAlterar() {},
   };
 
   const produtos = MODO_API ? produtosApi : produtosLocal;
@@ -490,6 +564,7 @@
       for (const item of itens) {
         const produto = await produtosLocal.obter(item.produtoId);
         if (!produto) throw new ErroMGK("Produto não encontrado.", 404);
+        if (!produto.ativo) throw new ErroMGK(`O produto ${produto.nome} está inativo e não pode ser vendido.`, 400);
         if (!Number.isInteger(item.quantidade) || item.quantidade < 1) throw new ErroMGK("Quantidade inválida.", 400);
         if (!(item.precoUnitario > 0)) throw new ErroMGK("Preço unitário inválido.", 400);
         produtosVenda.push({
