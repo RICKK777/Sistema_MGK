@@ -150,6 +150,26 @@
                 <div class="form-text">Sugerido na venda; o vendedor pode ajustar o preço em cada venda.</div>
               </div>
 
+              <div class="mb-3">
+                <span class="form-label d-block" id="fotoLabel">Foto do produto</span>
+                <div class="product-photo-field">
+                  <div class="product-photo-preview" id="fotoPreview" aria-labelledby="fotoLabel">
+                    <i class="bi bi-image" id="fotoVazia"></i>
+                    <img id="fotoImg" alt="Foto do produto" hidden>
+                  </div>
+                  <div class="product-photo-actions">
+                    <input type="file" id="foto" accept="image/png, image/jpeg, image/webp" class="visually-hidden" aria-labelledby="fotoLabel">
+                    <label for="foto" class="btn btn-outline-mgk" id="btnFoto">
+                      <i class="bi bi-camera"></i> <span id="btnFotoTexto">Adicionar foto</span>
+                    </label>
+                    <button type="button" class="btn btn-outline-mgk btn-icon-danger" id="btnRemoverFoto" hidden>
+                      <i class="bi bi-trash3"></i> Remover foto
+                    </button>
+                  </div>
+                </div>
+                <div class="form-text">Opcional. JPG, PNG ou WEBP de até 10 MB (a foto é reduzida automaticamente).</div>
+              </div>
+
               <!-- Exibido somente na edição -->
               <div class="mb-3" id="grupoAtivo" hidden>
                 <div class="form-check form-switch m-0">
@@ -193,6 +213,7 @@
               <table class="table table-hover table-mgk">
                 <thead>
                   <tr>
+                    <th scope="col" class="product-thumb-col"><span class="visually-hidden">Foto</span></th>
                     <th scope="col">Produto</th>
                     <th scope="col" class="text-end">Preço padrão</th>
                     <th scope="col">Status</th>

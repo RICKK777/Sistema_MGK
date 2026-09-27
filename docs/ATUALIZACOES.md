@@ -37,6 +37,14 @@ Este documento resume **tudo que mudou** nesta etapa do Sistema MGK e **o que pr
 
 ## O que fazer no banco
 
+> **Foto do produto (atualização mais recente).** A tela de Produtos agora aceita uma foto por produto (adicionar, trocar e remover). No modo `"api"`, rode uma vez no banco que já existe:
+>
+> ```sql
+> ALTER TABLE produtos ADD COLUMN foto MEDIUMTEXT NULL AFTER ativo;
+> ```
+>
+> Depois atualize os arquivos do back-end e reinicie a API. Sem essa coluna a API responde erro ao listar produtos. No modo `"local"` não é preciso fazer nada.
+
 > Só é necessário se o banco **já existia** antes desta atualização. Quem vai criar o banco agora pode rodar direto o script completo da [seção 5 do BANCO-DE-DADOS.md](BANCO-DE-DADOS.md#5-script-sql-completo), que já inclui a tabela `pagamentos`.
 
 Requer **MySQL 8.0.16 ou superior** (por causa do `CHECK`). Rode no **MySQL Workbench** (aba SQL, botão ⚡) com um usuário que possa criar tabelas (ex.: `root`). O usuário da API (`mgk_app`) já tem as permissões necessárias (`SELECT, INSERT, UPDATE, DELETE`), não precisa mudar nada nele.

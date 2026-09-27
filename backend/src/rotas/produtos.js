@@ -14,7 +14,7 @@ import { validarProduto } from "../validacao.js";
 
 const router = Router();
 
-const CAMPOS = "id, nome, preco_padrao AS precoPadrao, ativo IS TRUE AS ativo, criado_em AS criadoEm, atualizado_em AS atualizadoEm";
+const CAMPOS = "id, nome, preco_padrao AS precoPadrao, ativo IS TRUE AS ativo, foto, criado_em AS criadoEm, atualizado_em AS atualizadoEm";
 
 /** O MySQL devolve BOOLEAN como 0/1; o site espera true/false. */
 const comAtivo = (p) => ({ ...p, ativo: Boolean(p.ativo) });

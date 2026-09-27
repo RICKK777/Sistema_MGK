@@ -95,6 +95,7 @@ erDiagram
         VARCHAR nome
         DECIMAL preco_padrao
         BOOLEAN ativo
+        MEDIUMTEXT foto
         DATETIME criado_em
         DATETIME atualizado_em
     }
@@ -172,6 +173,7 @@ Convenção: o **MySQL usa `snake_case`** (`criado_em`) e o **JSON da API usa `c
 | `nome` | `nome` | `VARCHAR(120)` | |
 | `preco_padrao` | `precoPadrao` | `DECIMAL(10,2)` | Preço de tabela. **Nunca use `FLOAT` para dinheiro.** |
 | `ativo` | `ativo` | `BOOLEAN` | Produto fora de linha fica `0`: some da tela de venda, mas continua no histórico |
+| `foto` | `foto` | `MEDIUMTEXT` | Opcional. Foto já reduzida pelo site (JPEG até 600 px), em texto: `data:image/jpeg;base64,...` |
 | `criado_em` / `atualizado_em` | `criadoEm` / `atualizadoEm` | `DATETIME` | |
 
 > Os produtos são cadastrados pela tela **Produtos** (`produtos.html`). O nome é único (`409` se repetir).
@@ -278,6 +280,7 @@ CREATE TABLE produtos (
   nome          VARCHAR(120)  NOT NULL,
   preco_padrao  DECIMAL(10,2) NOT NULL,
   ativo         BOOLEAN       NOT NULL DEFAULT TRUE,
+  foto          MEDIUMTEXT    NULL,
   criado_em     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   atualizado_em DATETIME      NULL     DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
 

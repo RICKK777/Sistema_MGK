@@ -173,9 +173,12 @@
                         <i class="bi bi-plus-circle"></i> Cadastrar produto
                       </a>
                     </div>
-                    <select class="form-select" id="produtoNovo">
-                      <option value="">Selecione um produto</option>
-                    </select>
+                    <div class="product-pick">
+                      <span id="produtoNovoFoto"></span>
+                      <select class="form-select" id="produtoNovo">
+                        <option value="">Selecione um produto</option>
+                      </select>
+                    </div>
                   </div>
                   <div class="col-5 col-md-2">
                     <label for="qtdNova" class="form-label">Quantidade</label>
@@ -297,6 +300,22 @@
         </div>
       </form>
     </main>
+  </div>
+
+  <!-- Foto do produto ampliada (aberta ao clicar na miniatura) -->
+  <div class="modal fade" id="modalFotoProduto" tabindex="-1" aria-labelledby="modalFotoTitulo" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title fs-5" id="modalFotoTitulo">Foto do produto</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body text-center">
+          <img id="modalFotoImg" class="product-photo-large" alt="">
+          <p class="text-secondary mt-3 mb-0" id="modalFotoPreco"></p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>

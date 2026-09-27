@@ -110,6 +110,9 @@ export function validarPagamento(corpo = {}, saldo, { permitirZero = false } = {
   return erro ? { erro } : { dados };
 }
 
+/** Tamanho máximo da foto em texto (data URL). O site já envia a foto reduzida (~50 KB). */
+const FOTO_MAX = 1024 * 1024;
+
 /**
  * Valida o corpo de POST/PUT /produtos e devolve os dados prontos para o banco.
  * @returns {{ erro: string } | { dados: object }}
@@ -119,12 +122,15 @@ export function validarProduto(corpo = {}) {
     nome: texto(corpo.nome),
     preco_padrao: centavos(corpo.precoPadrao),
     ativo: corpo.ativo !== false,
+    foto: corpo.foto ? String(corpo.foto) : null,
   };
 
   let erro = null;
   if (dados.nome.length < 2) erro = "Informe o nome do produto (mínimo 2 caracteres).";
   else if (dados.nome.length > 120) erro = "O nome do produto passou do limite de 120 caracteres.";
   else if (!(dados.preco_padrao > 0) || dados.preco_padrao > 9999999.99) erro = "Informe um preço padrão válido.";
+  else if (dados.foto && !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(dados.foto)) erro = "Foto do produto inválida.";
+  else if (dados.foto && dados.foto.length > FOTO_MAX) erro = "A foto do produto é grande demais.";
 
   return erro ? { erro } : { dados };
 }

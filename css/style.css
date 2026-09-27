@@ -1545,6 +1545,112 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: inset 4px 0 0 var(--mgk-yellow);
 }
 
+/* Foto do produto */
+.product-photo-field {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.product-photo-preview {
+  flex: 0 0 auto;
+  width: 112px;
+  height: 112px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px dashed var(--mgk-gray-300);
+  border-radius: var(--mgk-radius-sm);
+  background: var(--mgk-gray-100);
+  color: var(--mgk-gray-500);
+  font-size: 2rem;
+}
+
+.product-photo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-photo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.product-photo-actions input:focus-visible + label {
+  outline: 2px solid var(--mgk-yellow);
+  outline-offset: 2px;
+}
+
+.product-thumb-col {
+  width: 64px;
+}
+
+.product-thumb {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  object-fit: cover;
+  border-radius: var(--mgk-radius-sm);
+  border: 1px solid var(--mgk-gray-200);
+  background: var(--mgk-gray-100);
+}
+
+.product-thumb-empty {
+  color: var(--mgk-gray-300);
+  font-size: 1.25rem;
+}
+
+.product-row.is-inactive .product-thumb {
+  opacity: 0.5;
+}
+
+/* Foto do produto na venda: miniatura ao lado do select, clicável para ampliar */
+.product-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+#produtoNovoFoto {
+  display: contents;
+}
+
+.product-pick > .form-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.product-pick .product-thumb {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+}
+
+.product-thumb-btn {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--mgk-radius-sm);
+  cursor: zoom-in;
+}
+
+.product-thumb-btn:hover .product-thumb,
+.product-thumb-btn:focus-visible .product-thumb {
+  border-color: var(--mgk-yellow);
+  box-shadow: 0 0 0 2px var(--mgk-yellow);
+}
+
+.product-photo-large {
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: var(--mgk-radius-sm);
+}
+
 .btn-icon-danger:hover,
 .btn-icon-danger:focus-visible {
   color: var(--mgk-white);

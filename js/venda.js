@@ -23,6 +23,7 @@
     clienteFeedback: $("clienteFeedback"),
     selecionado: $("clienteSelecionado"),
     produtoNovo: $("produtoNovo"),
+    produtoNovoFoto: $("produtoNovoFoto"),
     qtdNova: $("qtdNova"),
     tbody: $("itensVenda"),
     tabela: document.querySelector(".sale-items"),
@@ -176,13 +177,45 @@
         ${escapeHtml(p.nome)}${comPreco ? ` — ${format.moeda(p.precoPadrao)}` : ""}
       </option>`).join("");
 
+  /** Miniatura do produto. Com foto, é um botão que abre a foto ampliada. */
+  const fotoProduto = (produto) =>
+    produto?.foto
+      ? `<button type="button" class="product-thumb-btn" data-foto-id="${escapeHtml(produto.id)}"
+                 title="Ver foto" aria-label="Ver foto de ${escapeHtml(produto.nome)}">
+           <img class="product-thumb" src="${escapeHtml(produto.foto)}" alt="">
+         </button>`
+      : '<span class="product-thumb product-thumb-empty" aria-hidden="true"><i class="bi bi-image"></i></span>';
+
+  const mostrarFotoNova = () => {
+    el.produtoNovoFoto.innerHTML = fotoProduto(produtoPorId(el.produtoNovo.value));
+  };
+
+  const modalFoto = $("modalFotoProduto");
+  const abrirFoto = (id) => {
+    const produto = produtoPorId(id);
+    if (!produto?.foto) return;
+    $("modalFotoTitulo").textContent = produto.nome;
+    $("modalFotoImg").src = produto.foto;
+    $("modalFotoImg").alt = `Foto de ${produto.nome}`;
+    $("modalFotoPreco").textContent = `Preço padrão: ${format.moeda(produto.precoPadrao)}`;
+    bootstrap.Modal.getOrCreateInstance(modalFoto).show();
+  };
+
+  document.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-foto-id]");
+    if (btn) abrirFoto(btn.dataset.fotoId);
+  });
+
   const linhaItem = (item) => {
     const produto = produtoPorId(item.produtoId);
     return `
       <tr data-uid="${item.uid}">
         <td data-label="Produto">
           <label class="visually-hidden" for="produto-${item.uid}">Produto</label>
-          <select class="form-select item-produto" id="produto-${item.uid}">${opcoesProduto(item.produtoId, false)}</select>
+          <div class="product-pick">
+            ${fotoProduto(produto)}
+            <select class="form-select item-produto" id="produto-${item.uid}">${opcoesProduto(item.produtoId, false)}</select>
+          </div>
         </td>
         <td data-label="Quantidade" class="col-qtd">
           <label class="visually-hidden" for="qtd-${item.uid}">Quantidade</label>
@@ -266,12 +299,16 @@
 
     renderItens();
     el.produtoNovo.value = "";
+    mostrarFotoNova();
     el.qtdNova.value = "1";
     el.produtoNovo.focus();
   };
 
   $("btnAdicionarProduto").addEventListener("click", adicionarProduto);
-  el.produtoNovo.addEventListener("change", () => el.produtoNovo.classList.remove("is-invalid"));
+  el.produtoNovo.addEventListener("change", () => {
+    el.produtoNovo.classList.remove("is-invalid");
+    mostrarFotoNova();
+  });
 
   el.tbody.addEventListener("input", (event) => {
     const tr = event.target.closest("tr");
@@ -572,7 +609,9 @@
      Recarregado quando um produto é cadastrado/alterado em outra aba e ao voltar para esta aba,
      para que produtos novos apareçam sem precisar recarregar a página.
      ------------------------------------------------------------------------ */
-  const assinatura = (lista) => JSON.stringify(lista.map((p) => [p.id, p.nome, p.precoPadrao]));
+  // Da foto basta o tamanho e o final do texto para notar que ela mudou (sem comparar a foto inteira)
+  const assinatura = (lista) =>
+    JSON.stringify(lista.map((p) => [p.id, p.nome, p.precoPadrao, (p.foto || "").length, (p.foto || "").slice(-32)]));
   let cargaAtual = 0; // descarta respostas antigas que cheguem atrasadas
 
   /** Aplica o catálogo novo à venda em andamento. `antes` é o catálogo anterior ([] na primeira carga). */
@@ -596,6 +635,7 @@
 
     const selecionado = el.produtoNovo.value;
     el.produtoNovo.innerHTML = `<option value="">${catalogo.length ? "Selecione um produto" : "Nenhum produto ativo cadastrado"}</option>${opcoesProduto(selecionado)}`;
+    mostrarFotoNova();
     renderItens();
 
     if (antes.length) {

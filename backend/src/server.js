@@ -24,7 +24,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "2mb" })); // folga para a foto do produto (data URL)
 
 /** Teste rápido: abra http://localhost:3000/api/saude no navegador. */
 app.get("/api/saude", async (req, res) => {
@@ -42,6 +42,7 @@ app.use((req, res) => res.status(404).json({ erro: "Rota não encontrada." }));
 app.use((err, req, res, next) => {
   if (err instanceof HttpError) return res.status(err.status).json({ erro: err.message });
   if (err.type === "entity.parse.failed") return res.status(400).json({ erro: "JSON inválido." });
+  if (err.type === "entity.too.large") return res.status(413).json({ erro: "Os dados enviados são grandes demais (confira o tamanho da foto)." });
   if (["ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "ER_ACCESS_DENIED_ERROR", "ER_BAD_DB_ERROR"].includes(err.code)) {
     console.error("[MGK] Sem acesso ao banco:", err.code, err.message);
     return res.status(503).json({ erro: "Banco de dados indisponível. Tente novamente em instantes." });

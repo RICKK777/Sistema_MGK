@@ -381,11 +381,14 @@
       this.write(inicial);
       return inicial;
     },
+    /** @returns {boolean} false se não conseguiu gravar (ex.: navegador sem espaço). */
     write(list) {
       try {
         localStorage.setItem(key, JSON.stringify(list));
+        return true;
       } catch (err) {
         console.warn("[MGK] Não foi possível salvar \"%s\".", key, err);
+        return false;
       }
     },
     reset() {
@@ -395,7 +398,8 @@
 
   /* ------------------------------------------------------------------------
      Repositório de produtos
-     Produto: { id, nome, precoPadrao, ativo, criadoEm, atualizadoEm }
+     Produto: { id, nome, precoPadrao, ativo, foto, criadoEm, atualizadoEm }
+       - foto: data URL JPEG (já reduzida pela tela de produtos) ou null.
        - Produto inativo some da tela de venda, mas continua no histórico das vendas.
      ------------------------------------------------------------------------ */
   const produtosStore = store(PRODUTOS_KEY, () => window.MGK_MOCK_PRODUTOS);
@@ -427,6 +431,7 @@
         nome: String(dados.nome ?? "").trim(),
         precoPadrao: centavos(dados.precoPadrao),
         ativo: dados.ativo !== false,
+        foto: dados.foto || null,
       };
       if (lista.some((p) => normalize(p.nome) === normalize(registro.nome) && !mesmoId(p.id, registro.id))) {
         throw new ErroMGK("Já existe um produto cadastrado com este nome.", 409);
@@ -441,7 +446,9 @@
         registro.criadoEm = new Date().toISOString();
         lista.push(registro);
       }
-      produtosStore.write(lista);
+      if (!produtosStore.write(lista)) {
+        throw new ErroMGK("Não há espaço no navegador para salvar. Remova ou troque fotos de outros produtos.", 507);
+      }
       return comAtivo(idx >= 0 ? lista[idx] : registro);
     },
 
