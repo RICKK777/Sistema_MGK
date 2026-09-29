@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar | Sistema MGK</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" integrity="sha384-XGjxtQfXaH2tnPFa9x+ruJTuLE3Aa6LhHSWRr1XeTyhezb4abCG4ccI5AkVDxqC+" crossorigin="anonymous">
+  <link href="css/style.css" rel="stylesheet">
+  <script src="js/auth.js"></script>
+</head>
+<body class="login-page">
+
+  <main class="login-wrapper">
+    <div class="login-brand">
+      <span class="brand-mark">MGK</span>
+      <span class="brand-text">
+        <span class="brand-name">MGK</span>
+        <span class="brand-sub">Makyuner Professional</span>
+      </span>
+    </div>
+
+    <form id="formLogin" class="card-mgk login-card" novalidate>
+      <div class="card-mgk-body">
+        <h1 class="login-title">Entrar no sistema</h1>
+        <p class="login-subtitle">Informe seu usuário ou e-mail e a senha.</p>
+
+        <div class="alert alert-danger py-2" id="erroLogin" role="alert" hidden>
+          <i class="bi bi-exclamation-octagon-fill me-1"></i>
+          <span id="erroLoginTexto"></span>
+        </div>
+
+        <div class="mb-3">
+          <label for="login" class="form-label">Usuário ou e-mail</label>
+          <input type="text" class="form-control form-control-lg" id="login" autocomplete="username" required autofocus>
+        </div>
+
+        <div class="mb-4">
+          <label for="senha" class="form-label">Senha</label>
+          <div class="input-group">
+            <input type="password" class="form-control form-control-lg" id="senha" autocomplete="current-password" required>
+            <button type="button" class="btn btn-outline-mgk" id="btnVerSenha" title="Mostrar senha" aria-label="Mostrar senha">
+              <i class="bi bi-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-mgk btn-lg w-100" id="btnEntrar">
+          <i class="bi bi-box-arrow-in-right"></i> Entrar
+        </button>
+      </div>
+    </form>
+
+   <!-- <div class="demo-notice login-demo" id="avisoDemo" role="note" hidden>
+      <i class="bi bi-info-circle-fill"></i>
+      <span>
+        <strong>Demonstração (sem back-end):</strong>
+        <code>admin</code> / <code>admin123</code> ·
+        <code>chefe</code> / <code>chefe123</code> ·
+        <code>vendedor</code> / <code>vendedor123</code>
+      </span>
+    </div>
+    -->
+    <p class="login-footer">Sistema MGK · v0.1</p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+  <script src="js/config.js"></script>
+  <script src="js/mock-data.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/login.js"></script>
+</body>
+</html>

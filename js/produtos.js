@@ -11,7 +11,10 @@
 (function () {
   "use strict";
 
-  const { produtos, format, normalize, escapeHtml, mesmoId, modoApi, ui } = window.MGK;
+  const { produtos, format, normalize, escapeHtml, mesmoId, modoApi, ui, auth } = window.MGK;
+  // Chefe só cadastra; editar, ativar/inativar e excluir são do admin
+  const podeEditar = auth.temPermissao("editar_produto");
+  const podeExcluir = auth.temPermissao("excluir_produto");
 
   const $ = (id) => document.getElementById(id);
 
@@ -69,18 +72,18 @@
       <td>${statusBadge(p.ativo)}</td>
       <td class="text-end">
         <div class="table-actions">
-          <button type="button" class="btn btn-outline-mgk btn-icon" data-action="editar" data-id="${escapeHtml(p.id)}"
+          ${podeEditar ? `<button type="button" class="btn btn-outline-mgk btn-icon" data-action="editar" data-id="${escapeHtml(p.id)}"
                   title="Editar" aria-label="Editar ${escapeHtml(p.nome)}">
             <i class="bi bi-pencil"></i>
           </button>
           <button type="button" class="btn btn-outline-mgk btn-icon" data-action="alternar" data-id="${escapeHtml(p.id)}"
                   title="${p.ativo ? "Inativar" : "Ativar"}" aria-label="${p.ativo ? "Inativar" : "Ativar"} ${escapeHtml(p.nome)}">
             <i class="bi ${p.ativo ? "bi-slash-circle" : "bi-check-circle"}"></i>
-          </button>
-          <button type="button" class="btn btn-outline-mgk btn-icon btn-icon-danger" data-action="excluir" data-id="${escapeHtml(p.id)}"
+          </button>` : ""}
+          ${podeExcluir ? `<button type="button" class="btn btn-outline-mgk btn-icon btn-icon-danger" data-action="excluir" data-id="${escapeHtml(p.id)}"
                   title="Excluir" aria-label="Excluir ${escapeHtml(p.nome)}">
             <i class="bi bi-trash3"></i>
-          </button>
+          </button>` : ""}
         </div>
       </td>
     </tr>`;

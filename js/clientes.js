@@ -6,7 +6,8 @@
 (function () {
   "use strict";
 
-  const { clientes, produtos, vendas, format, escapeHtml, initials, mesmoId, modoApi, ui } = window.MGK;
+  const { clientes, produtos, vendas, format, escapeHtml, initials, mesmoId, modoApi, ui, auth } = window.MGK;
+  const podeEditar = auth.temPermissao("editar_cliente");
 
   const el = {
     form: document.getElementById("formBusca"),
@@ -62,10 +63,10 @@
              title="Nova venda" aria-label="Nova venda para ${escapeHtml(c.nome)}">
             <i class="bi bi-cart-plus"></i>
           </a>
-          <a href="cadastro-cliente.html?id=${encodeURIComponent(c.id)}" class="btn btn-outline-mgk btn-icon"
+          ${podeEditar ? `<a href="cadastro-cliente.html?id=${encodeURIComponent(c.id)}" class="btn btn-outline-mgk btn-icon"
              title="Editar" aria-label="Editar ${escapeHtml(c.nome)}">
             <i class="bi bi-pencil"></i>
-          </a>
+          </a>` : ""}
         </div>
       </td>
     </tr>`;

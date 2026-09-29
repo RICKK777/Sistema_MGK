@@ -305,3 +305,18 @@ window.MGK_MOCK_VENDAS = (function () {
     // Carlos Santos: sem compras, para demonstrar o histórico vazio e a primeira venda
   ];
 })();
+
+/**
+ * Usuários de demonstração do login (somente no modo "local", sem back-end).
+ * senhaHash = SHA-256 da senha. Senhas: admin123, chefe123 e vendedor123.
+ * Também dá para usar "senha" em texto puro no lugar de "senhaHash" (ex.: { ..., senha: "1234" }).
+ * No modo "api" os usuários ficam na tabela `usuarios` do MySQL, com hash scrypt.
+ */
+window.MGK_MOCK_USUARIOS = [
+  { id: "u-1", nome: "Administrador TI", usuario: "admin", email: "admin@mgk.local", tipo: "admin",
+    senhaHash: "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9" },
+  { id: "u-2", nome: "Carla Chefe", usuario: "chefe", email: "chefe@mgk.local", tipo: "chefe",
+    senhaHash: "64883d7e3ed9ff3a37808ad53747649fe22542567bba07247adc4e5bd2e27f54" },
+  { id: "u-3", nome: "Victor Vendedor", usuario: "vendedor", email: "vendedor@mgk.local", tipo: "vendedor",
+    senhaHash: "56976bf24998ca63e35fe4f1e2469b5751d1856003e8d16fef0aafef496ed044" },
+];

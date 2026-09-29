@@ -134,3 +134,29 @@ export function validarProduto(corpo = {}) {
 
   return erro ? { erro } : { dados };
 }
+
+const TIPOS_USUARIO = ["vendedor", "chefe", "admin"];
+
+/**
+ * Valida o corpo de POST/PUT /usuarios. Devolve a senha separada: quem grava é a rota, já como hash.
+ * Na edição (senhaOpcional), senha vazia = manter a atual.
+ * @returns {{ erro: string } | { dados: object, senha: string }}
+ */
+export function validarUsuario(corpo = {}, { senhaOpcional = false } = {}) {
+  const dados = {
+    nome: texto(corpo.nome),
+    usuario: texto(corpo.usuario),
+    email: opcional(corpo.email),
+    tipo: texto(corpo.tipo).toLowerCase(),
+  };
+  const senha = String(corpo.senha ?? "");
+
+  let erro = null;
+  if (dados.nome.length < 3 || dados.nome.length > 120) erro = "Informe o nome (mínimo 3 caracteres).";
+  else if (!/^[\w.\-]{3,60}$/.test(dados.usuario)) erro = "Usuário inválido (3 a 60 letras, números, ponto, traço ou _).";
+  else if (dados.email && (dados.email.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dados.email))) erro = "E-mail inválido.";
+  else if (!TIPOS_USUARIO.includes(dados.tipo)) erro = "Selecione o tipo do usuário.";
+  else if (!(senhaOpcional && !senha) && senha.length < 6) erro = "A senha precisa ter pelo menos 6 caracteres.";
+
+  return erro ? { erro } : { dados, senha };
+}

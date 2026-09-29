@@ -10,7 +10,9 @@ Site (navegador) ──HTTP/JSON──▶ esta API ──SQL──▶ MySQL
 
 ## 1. Criar o banco (MySQL Workbench)
 
-Crie o banco `mgk` e as tabelas `clientes`, `produtos`, `vendas`, `venda_itens` e `pagamentos`.
+Crie o banco `mgk` e as tabelas `clientes`, `produtos`, `vendas`, `venda_itens`, `pagamentos` e `usuarios`.
+
+> **Login:** a tabela `usuarios` e a criação do primeiro admin (`npm run criar-usuario`) estão em [docs/LOGIN-E-PERMISSOES.md](../docs/LOGIN-E-PERMISSOES.md). Sem ela, ninguém consegue entrar no sistema.
 
 > **Banco criado antes da tabela `pagamentos`?** Não recrie nada: rode só o script de atualização de [docs/ATUALIZACOES.md](../docs/ATUALIZACOES.md#o-que-fazer-no-banco). Sem essa tabela, as rotas de vendas dão erro.
 
@@ -71,7 +73,10 @@ backend/
     ├── db.js            # conexão com o MySQL (lê o .env) e transações
     ├── erros.js         # HttpError (status + mensagem para o usuário)
     ├── validacao.js     # CPF/CNPJ, telefone, CEP, produto, pagamento (mesmas regras do site)
+    ├── permissoes.js    # o que cada tipo de usuário (vendedor, chefe, admin) pode fazer
+    ├── auth.js          # hash da senha, sessões, exigirLogin e exigirPermissao
     └── rotas/
+        ├── auth.js      # POST /api/auth/login e /api/auth/logout
         ├── clientes.js  # GET/POST/PUT /api/clientes
         ├── produtos.js  # GET/POST/PUT/DELETE /api/produtos
         └── vendas.js    # GET/POST /api/vendas e POST /api/vendas/:id/pagamentos (em transação)

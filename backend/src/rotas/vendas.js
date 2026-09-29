@@ -8,10 +8,13 @@
  *                                  Valor acima do total abate a conta em aberto do cliente; a resposta traz
  *                                  `abatimentos: [{ vendaId, numero, valor }]`.
  *   POST /vendas/:id/pagamentos  → { valor, forma, data, observacao }  (cliente pagou mais uma parte)
+ * Permissões: GET é livre para quem está logado; cadastrar_venda (POST /vendas),
+ *             registrar_pagamento (POST /vendas/:id/pagamentos)
  */
 import { Router } from "express";
 import { pool, transacao } from "../db.js";
 import { HttpError, idDaRota } from "../erros.js";
+import { exigirPermissao } from "../auth.js";
 import { centavos, validarPagamento } from "../validacao.js";
 
 const router = Router();
@@ -74,7 +77,7 @@ router.get("/:id", async (req, res) => {
   res.json(await buscarPorId(idDaRota(req.params.id, "Venda não encontrada.")));
 });
 
-router.post("/", async (req, res) => {
+router.post("/", exigirPermissao("cadastrar_venda"), async (req, res) => {
   const { clienteId, itens, desconto = 0, pagamento = { valor: 0 } } = req.body ?? {};
 
   if (!Array.isArray(itens) || !itens.length) throw new HttpError(400, "Adicione pelo menos um produto.");
@@ -170,7 +173,7 @@ router.post("/", async (req, res) => {
   res.status(201).json(venda);
 });
 
-router.post("/:id/pagamentos", async (req, res) => {
+router.post("/:id/pagamentos", exigirPermissao("registrar_pagamento"), async (req, res) => {
   const id = idDaRota(req.params.id, "Venda não encontrada.");
 
   const venda = await transacao(async (db) => {

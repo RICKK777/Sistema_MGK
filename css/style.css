@@ -1781,3 +1781,92 @@ h1, h2, h3, h4, h5, h6 {
 .sale-totals .sale-totals-credit dd {
   color: var(--mgk-success);
 }
+
+/* --------------------------------------------------------------------------
+   Login e usuário logado
+   -------------------------------------------------------------------------- */
+.login-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(255, 196, 0, 0.18), transparent 40%),
+    var(--mgk-black);
+}
+
+.login-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 420px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--mgk-white);
+}
+
+.login-brand .brand-mark {
+  width: 48px;
+  height: 48px;
+  font-size: 1rem;
+}
+
+.login-card {
+  width: 100%;
+  box-shadow: var(--mgk-shadow-lg);
+}
+
+.login-card .card-mgk-body {
+  padding: 2rem;
+}
+
+.login-title {
+  margin-bottom: 0.25rem;
+  font-size: 1.5rem;
+}
+
+.login-subtitle {
+  margin-bottom: 1.5rem;
+  color: var(--mgk-gray-500);
+}
+
+.login-demo {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  width: 100%;
+  margin: 0;
+}
+
+.login-footer {
+  margin: 0;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.topbar-user-info {
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+
+.topbar-user-name {
+  font-weight: 600;
+  color: var(--mgk-black);
+}
+
+.topbar-user-role {
+  font-size: 0.75rem;
+  color: var(--mgk-gray-500);
+}
+
+.sidebar-logout {
+  padding: 0.5rem 0.875rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}

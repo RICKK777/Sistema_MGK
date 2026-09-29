@@ -1,11 +1,12 @@
 /**
  * Sistema MGK — núcleo compartilhado entre as telas.
  *
- * - MGK.clientes / MGK.produtos / MGK.vendas: repositórios de dados. Todos os métodos que leem ou
+ * - MGK.clientes / MGK.produtos / MGK.vendas / MGK.usuarios: repositórios de dados. Todos os métodos que leem ou
  *   gravam dados são ASSÍNCRONOS (devolvem Promise) e funcionam igual nos dois modos de js/config.js:
  *     "local" → localStorage do navegador;  "api" → back-end HTTP (MySQL), via MGK.api.
  * - MGK.format / MGK.validate: máscaras e validações de CPF/CNPJ, telefone e CEP.
  * - MGK.ui: toast, mensagens entre páginas e utilidades de HTML.
+ * - MGK.auth: usuário logado e permissões (js/auth.js).
  */
 (function () {
   "use strict";
@@ -22,6 +23,7 @@
   // Nome da chave no localStorage (não é credencial).
   const PRODUTOS_KEY = "mgk.produtos.v1"; // gitleaks:allow
   const VENDAS_KEY = "mgk.vendas.v1";
+  const USUARIOS_KEY = "mgk.usuarios.v1";
   const SEED_KEY = "mgk.seed";
   const SEED_VERSION = 2;
   const FLASH_KEY = "mgk.flash";
@@ -200,6 +202,8 @@
       const limite = setTimeout(() => controle.abort(), CONFIG.timeoutMs);
       const headers = { Accept: "application/json" };
       if (corpo !== undefined) headers["Content-Type"] = "application/json";
+      const token = window.MGK_AUTH?.token();
+      if (token) headers.Authorization = `Bearer ${token}`;
 
       let resposta;
       let dados = null;
@@ -221,6 +225,12 @@
         clearTimeout(limite);
       }
 
+      // Sessão expirada ou inválida: volta para o login (no próprio login, 401 é só senha errada)
+      if (resposta.status === 401 && caminho !== "/auth/login" && window.MGK_AUTH) {
+        MGK_AUTH.encerrarSessao();
+        MGK_AUTH.avisarNaProximaTela(dados?.erro || "Sua sessão expirou. Entre novamente.", "error");
+        location.replace("login.html");
+      }
       if (!resposta.ok) {
         throw new ErroMGK(dados?.erro || `Erro ${resposta.status} no servidor.`, resposta.status, dados);
       }
@@ -775,6 +785,132 @@
   const vendas = { ...vendasRegras, ...(MODO_API ? vendasApi : vendasLocal) };
 
   /* ------------------------------------------------------------------------
+     Repositório de usuários (tela de usuários, só o admin/TI)
+     Usuário: { id, nome, usuario, email, tipo, senhaHash }
+       - Local: os de mock-data.js + os criados/editados na tela (guardados no navegador).
+         A senha é guardada somente como hash SHA-256 (sem segurança real: é só demonstração).
+       - API: o back-end grava o hash scrypt no MySQL.
+     A lista devolvida nunca traz a senha nem o hash.
+     ------------------------------------------------------------------------ */
+  const usuariosStore = store(USUARIOS_KEY, () => []);
+
+  const TIPOS_USUARIO = ["vendedor", "chefe", "admin"];
+
+  async function sha256(texto) {
+    const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto));
+    return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  const semSenha = ({ id, nome, usuario, email, tipo }) => ({ id, nome, usuario, email: email || null, tipo });
+
+  /**
+   * Mesmas regras de backend/src/validacao.js (validarUsuario). Devolve a mensagem de erro ou "".
+   * Na edição (senhaOpcional), senha vazia = manter a atual.
+   */
+  function validarUsuario({ nome, usuario, email, tipo, senha }, { senhaOpcional = false } = {}) {
+    if (String(nome ?? "").trim().length < 3) return "Informe o nome (mínimo 3 caracteres).";
+    if (!/^[\w.\-]{3,60}$/.test(String(usuario ?? "").trim())) return "Usuário inválido (3 a 60 letras, números, ponto, traço ou _).";
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return "E-mail inválido.";
+    if (!TIPOS_USUARIO.includes(tipo)) return "Selecione o tipo do usuário.";
+    if (!(senhaOpcional && !senha) && String(senha ?? "").length < 6) return "A senha precisa ter pelo menos 6 caracteres.";
+    return "";
+  }
+
+  // O navegador guarda os usuários criados na tela e as edições dos de mock-data.js (mesmo id)
+  const todosUsuariosLocal = () => {
+    const salvos = usuariosStore.read();
+    const doMock = (window.MGK_MOCK_USUARIOS || []).filter((m) => !salvos.some((s) => mesmoId(s.id, m.id)));
+    return [...doMock, ...salvos];
+  };
+
+  /** Usuário ou e-mail já usado por OUTRO usuário gera ErroMGK 409, como na API. */
+  function conferirRepetido(lista, { id, usuario, email }) {
+    const outros = lista.filter((u) => !mesmoId(u.id, id));
+    if (outros.some((u) => normalize(u.usuario) === normalize(usuario))) {
+      throw new ErroMGK("Já existe um usuário com este nome de acesso.", 409);
+    }
+    if (email && outros.some((u) => u.email && normalize(u.email) === normalize(email))) {
+      throw new ErroMGK("Já existe um usuário com este e-mail.", 409);
+    }
+  }
+
+  function gravarUsuarioLocal(registro) {
+    const salvos = usuariosStore.read();
+    const idx = salvos.findIndex((u) => mesmoId(u.id, registro.id));
+    if (idx >= 0) salvos[idx] = registro;
+    else salvos.push(registro);
+    if (!usuariosStore.write(salvos)) throw new ErroMGK("Não há espaço no navegador para salvar.", 507);
+    return semSenha(registro);
+  }
+
+  const usuariosLocal = {
+    listar: async () => todosUsuariosLocal().map(semSenha),
+
+    async criar({ nome, usuario, email, tipo, senha }) {
+      const erro = validarUsuario({ nome, usuario, email, tipo, senha });
+      if (erro) throw new ErroMGK(erro, 400);
+      conferirRepetido(todosUsuariosLocal(), { usuario, email });
+
+      return gravarUsuarioLocal({
+        id: `u-${Date.now()}`,
+        nome: nome.trim(),
+        usuario: usuario.trim(),
+        email: email ? email.trim() : null,
+        tipo,
+        senhaHash: await sha256(senha),
+      });
+    },
+
+    /** Edita o usuário. Senha vazia mantém a atual; senha nova é guardada só como hash. */
+    async atualizar(id, { nome, usuario, email, tipo, senha }) {
+      const erro = validarUsuario({ nome, usuario, email, tipo, senha }, { senhaOpcional: true });
+      if (erro) throw new ErroMGK(erro, 400);
+
+      const lista = todosUsuariosLocal();
+      const atual = lista.find((u) => mesmoId(u.id, id));
+      if (!atual) throw new ErroMGK("Usuário não encontrado.", 404);
+      conferirRepetido(lista, { id, usuario, email });
+      // Evita o admin tirar o próprio acesso a esta tela
+      if (mesmoId(id, window.MGK_AUTH?.usuarioLogado()?.id) && tipo !== atual.tipo) {
+        throw new ErroMGK("Você não pode mudar o seu próprio tipo de acesso.", 400);
+      }
+
+      const { senha: senhaAntiga, senhaHash: hashAntigo } = atual;
+      return gravarUsuarioLocal({
+        id: atual.id,
+        nome: nome.trim(),
+        usuario: usuario.trim(),
+        email: email ? email.trim() : null,
+        tipo,
+        ...(senha ? { senhaHash: await sha256(senha) } : hashAntigo ? { senhaHash: hashAntigo } : { senha: senhaAntiga }),
+      });
+    },
+
+    /** Login do modo local. Aceita "senhaHash" (SHA-256) ou "senha" em texto puro (usuários de teste). */
+    async autenticar(login, senha) {
+      const hash = await sha256(senha);
+      const usuario = todosUsuariosLocal().find(
+        (u) =>
+          (normalize(u.usuario) === normalize(login) || normalize(u.email) === normalize(login)) &&
+          (u.senhaHash ? u.senhaHash === hash : u.senha === senha)
+      );
+      if (!usuario) throw new ErroMGK("Usuário ou senha inválidos.", 401);
+      return semSenha(usuario);
+    },
+  };
+
+  const usuariosApi = {
+    listar: () => api.get("/usuarios"),
+    /** POST /usuarios com { nome, usuario, email, tipo, senha } → usuário criado (sem a senha). */
+    criar: ({ nome, usuario, email, tipo, senha }) => api.post("/usuarios", { nome, usuario, email, tipo, senha }),
+    /** PUT /usuarios/:id com os mesmos campos; senha vazia mantém a atual. */
+    atualizar: (id, { nome, usuario, email, tipo, senha }) =>
+      api.put(rota("/usuarios", id), { nome, usuario, email, tipo, senha }),
+  };
+
+  const usuarios = { TIPOS: TIPOS_USUARIO, validar: validarUsuario, ...(MODO_API ? usuariosApi : usuariosLocal) };
+
+  /* ------------------------------------------------------------------------
      UI
      ------------------------------------------------------------------------ */
   const ui = {
@@ -836,7 +972,9 @@
     clientes,
     produtos,
     vendas,
+    usuarios,
     ui,
+    auth: window.MGK_AUTH,
   };
 
   document.addEventListener("DOMContentLoaded", () => {

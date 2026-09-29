@@ -6,10 +6,12 @@
  *   GET  /clientes/:id
  *   POST /clientes
  *   PUT  /clientes/:id
+ * Permissões: consultar_cliente (GET), cadastrar_cliente (POST), editar_cliente (PUT)
  */
 import { Router } from "express";
 import { pool } from "../db.js";
 import { HttpError, idDaRota } from "../erros.js";
+import { exigirPermissao } from "../auth.js";
 import { onlyDigits, validarCliente } from "../validacao.js";
 
 const router = Router();
@@ -33,7 +35,7 @@ function tratarDuplicado(err) {
   throw err;
 }
 
-router.get("/", async (req, res) => {
+router.get("/", exigirPermissao("consultar_cliente"), async (req, res) => {
   const documento = onlyDigits(req.query.documento);
   const busca = String(req.query.busca ?? "").trim();
   let where = "";
@@ -54,11 +56,11 @@ router.get("/", async (req, res) => {
   res.json(linhas);
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", exigirPermissao("consultar_cliente"), async (req, res) => {
   res.json(await buscarPorId(idDaRota(req.params.id, "Cliente não encontrado.")));
 });
 
-router.post("/", async (req, res) => {
+router.post("/", exigirPermissao("cadastrar_cliente"), async (req, res) => {
   const { erro, dados } = validarCliente(req.body);
   if (erro) throw new HttpError(400, erro);
 
@@ -66,7 +68,7 @@ router.post("/", async (req, res) => {
   res.status(201).json(await buscarPorId(resultado.insertId));
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", exigirPermissao("editar_cliente"), async (req, res) => {
   const id = idDaRota(req.params.id, "Cliente não encontrado.");
   const { erro, dados } = validarCliente(req.body);
   if (erro) throw new HttpError(400, erro);

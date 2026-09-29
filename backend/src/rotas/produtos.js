@@ -6,10 +6,13 @@
  *   POST /produtos
  *   PUT  /produtos/:id
  *   DELETE /produtos/:id  → só se o produto nunca foi vendido (senão 409)
+ * Permissões: GET é livre para quem está logado (a tela de venda lista os produtos);
+ *             cadastrar_produto (POST), editar_produto (PUT), excluir_produto (DELETE)
  */
 import { Router } from "express";
 import { pool } from "../db.js";
 import { HttpError, idDaRota } from "../erros.js";
+import { exigirPermissao } from "../auth.js";
 import { validarProduto } from "../validacao.js";
 
 const router = Router();
@@ -41,7 +44,7 @@ router.get("/:id", async (req, res) => {
   res.json(await buscarPorId(idDaRota(req.params.id, "Produto não encontrado.")));
 });
 
-router.post("/", async (req, res) => {
+router.post("/", exigirPermissao("cadastrar_produto"), async (req, res) => {
   const { erro, dados } = validarProduto(req.body);
   if (erro) throw new HttpError(400, erro);
 
@@ -49,7 +52,7 @@ router.post("/", async (req, res) => {
   res.status(201).json(await buscarPorId(resultado.insertId));
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", exigirPermissao("editar_produto"), async (req, res) => {
   const id = idDaRota(req.params.id, "Produto não encontrado.");
   const { erro, dados } = validarProduto(req.body);
   if (erro) throw new HttpError(400, erro);
@@ -59,7 +62,7 @@ router.put("/:id", async (req, res) => {
   res.json(await buscarPorId(id));
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", exigirPermissao("excluir_produto"), async (req, res) => {
   const id = idDaRota(req.params.id, "Produto não encontrado.");
   // venda_itens → produtos é ON DELETE RESTRICT: produto já vendido não pode ser apagado
   const [resultado] = await pool.query("DELETE FROM produtos WHERE id = ?", [id]).catch((err) => {

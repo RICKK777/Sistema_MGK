@@ -5,9 +5,12 @@
 import express from "express";
 import { pool } from "./db.js";
 import { HttpError } from "./erros.js";
+import { exigirLogin } from "./auth.js";
+import auth from "./rotas/auth.js";
 import clientes from "./rotas/clientes.js";
 import produtos from "./rotas/produtos.js";
 import vendas from "./rotas/vendas.js";
+import usuarios from "./rotas/usuarios.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const ORIGENS = String(process.env.CORS_ORIGIN || "*").split(",").map((o) => o.trim());
@@ -19,7 +22,7 @@ app.use((req, res, next) => {
   const origem = req.headers.origin;
   if (ORIGENS.includes("*")) res.set("Access-Control-Allow-Origin", "*");
   else if (origem && ORIGENS.includes(origem)) res.set({ "Access-Control-Allow-Origin": origem, Vary: "Origin" });
-  res.set({ "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Accept" });
+  res.set({ "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization" });
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
@@ -32,9 +35,14 @@ app.get("/api/saude", async (req, res) => {
   res.json({ ok: true, banco: "conectado" });
 });
 
+app.use("/api/auth", auth);
+
+// Daqui para baixo, só com login. Cada rota ainda confere a permissão do usuário.
+app.use("/api", exigirLogin);
 app.use("/api/clientes", clientes);
 app.use("/api/produtos", produtos);
 app.use("/api/vendas", vendas);
+app.use("/api/usuarios", usuarios);
 
 app.use((req, res) => res.status(404).json({ erro: "Rota não encontrada." }));
 

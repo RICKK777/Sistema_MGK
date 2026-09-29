@@ -615,6 +615,8 @@ erDiagram
 
 ### 9.1 `usuarios` (login e vendedores)
 
+> **Já implementado** com os tipos `vendedor`, `chefe` e `admin`: veja [LOGIN-E-PERMISSOES.md](LOGIN-E-PERMISSOES.md). O script abaixo era só a sugestão inicial.
+
 Um vendedor é um usuário com perfil `vendedor`. Assim, a mesma tabela serve para o login e para a tela de Vendedores.
 
 ```sql
